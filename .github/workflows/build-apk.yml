@@ -1,4 +1,4 @@
-name: Build School Vibe Argo APK
+name: Build Calendario Scuola APK
 
 on:
   push:
@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ "main", "master" ]
   workflow_dispatch:
+
+concurrency:
+  group: build-apk-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-android-apk:
@@ -29,7 +33,7 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Genera e configura progetto nativo Android (se assente)
+      - name: Genera progetto Android, nome app e icona Tocco di Laurea
         run: |
           cp pubspec.yaml /tmp/pubspec.yaml.bak
           cp lib/main.dart /tmp/main.dart.bak
@@ -45,6 +49,88 @@ jobs:
           mkdir -p lib
           cp /tmp/main.dart.bak lib/main.dart
           rm -f test/widget_test.dart
+
+          python3 -m pip install --quiet pillow
+          python3 - << 'PYEOF'
+          import os
+          from PIL import Image, ImageDraw
+
+          BLUE = (61, 133, 198, 255)
+          WHITE = (255, 255, 255, 255)
+          TRANSPARENT = (0, 0, 0, 0)
+
+          CAP_AND_TASSEL = [
+              (500, 190), (900, 365), (500, 540), (272, 440),
+              (225, 474), (225, 626), (285, 715), (285, 822),
+              (192.5, 748), (100, 822), (100, 715), (160, 626),
+              (160, 436), (200, 409), (100, 365),
+          ]
+          HEADBAND = [
+              (285, 505), (500, 599), (715, 505),
+              (715, 598), (500, 692), (285, 598),
+          ]
+
+          def render_cap(out_px, bg, scale):
+              hi = 2048
+              if os.path.exists("icon.png"):
+                  src = Image.open("icon.png").convert("RGBA")
+                  canvas = Image.new("RGBA", (hi, hi), bg)
+                  box = int(hi * scale)
+                  resized = src.resize((box, box), Image.Resampling.LANCZOS)
+                  off = (hi - box) // 2
+                  canvas.paste(resized, (off, off), resized)
+                  return canvas.resize((out_px, out_px), Image.Resampling.LANCZOS)
+
+              img = Image.new("RGBA", (hi, hi), bg)
+              draw = ImageDraw.Draw(img)
+              def tr(pts):
+                  return [
+                      (
+                          hi * (0.5 + ((x - 500.0) / 1000.0) * scale),
+                          hi * (0.5 + ((y - 505.0) / 1000.0) * scale),
+                      )
+                      for (x, y) in pts
+                  ]
+              draw.polygon(tr(CAP_AND_TASSEL), fill=BLUE)
+              draw.polygon(tr(HEADBAND), fill=BLUE)
+              return img.resize((out_px, out_px), Image.Resampling.LANCZOS)
+
+          res_root = "android/app/src/main/res"
+          densities = {
+              "mipmap-mdpi": (48, 108),
+              "mipmap-hdpi": (72, 162),
+              "mipmap-xhdpi": (96, 216),
+              "mipmap-xxhdpi": (144, 324),
+              "mipmap-xxxhdpi": (192, 432),
+          }
+
+          for folder, (legacy_px, fg_px) in densities.items():
+              dpath = os.path.join(res_root, folder)
+              os.makedirs(dpath, exist_ok=True)
+              legacy_img = render_cap(legacy_px, WHITE, 0.90)
+              legacy_img.save(os.path.join(dpath, "ic_launcher.png"))
+              legacy_img.save(os.path.join(dpath, "ic_launcher_round.png"))
+              fg_img = render_cap(fg_px, TRANSPARENT, 0.56)
+              fg_img.save(os.path.join(dpath, "ic_launcher_foreground.png"))
+
+          val_dir = os.path.join(res_root, "values")
+          os.makedirs(val_dir, exist_ok=True)
+          with open(os.path.join(val_dir, "ic_launcher_background.xml"), "w") as f:
+              f.write('<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ic_launcher_background">#FFFFFF</color>\n</resources>\n')
+
+          anydpi_dir = os.path.join(res_root, "mipmap-anydpi-v26")
+          os.makedirs(anydpi_dir, exist_ok=True)
+          adaptive_xml = '''<?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/ic_launcher_background"/>
+              <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+          </adaptive-icon>
+          '''
+          with open(os.path.join(anydpi_dir, "ic_launcher.xml"), "w") as f:
+              f.write(adaptive_xml)
+          with open(os.path.join(anydpi_dir, "ic_launcher_round.xml"), "w") as f:
+              f.write(adaptive_xml)
+          PYEOF
 
           cat > android/app/build.gradle << 'EOF'
           plugins {
@@ -105,9 +191,10 @@ jobs:
               <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
 
               <application
-                  android:label="School Vibe Argo"
+                  android:label="Calendario Scuola"
                   android:name="${applicationName}"
-                  android:icon="@mipmap/ic_launcher">
+                  android:icon="@mipmap/ic_launcher"
+                  android:roundIcon="@mipmap/ic_launcher_round">
                   <activity
                       android:name=".MainActivity"
                       android:exported="true"
@@ -122,7 +209,7 @@ jobs:
                           android:resource="@style/NormalTheme" />
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN"/>
-                          <category android:name="android.intent.category.LAUNCHER"/>
+                          <category android:name="android.intent.action.LAUNCHER"/>
                       </intent-filter>
                   </activity>
 
@@ -162,12 +249,12 @@ jobs:
 
       - name: Prepara file APK con nome leggibile
         run: |
-          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/school-vibe-argo.apk
+          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/calendario-scuola.apk
 
       - name: Carica APK negli Artifacts di GitHub
         uses: actions/upload-artifact@v4
         with:
-          name: school-vibe-argo-apk
-          path: build/app/outputs/flutter-apk/school-vibe-argo.apk
+          name: calendario-scuola-apk
+          path: build/app/outputs/flutter-apk/calendario-scuola.apk
           if-no-files-found: error
           retention-days: 30
