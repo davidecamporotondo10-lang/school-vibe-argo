@@ -24,78 +24,67 @@ Future<void> main() async {
   runApp(SchoolVibeApp(storage: storage));
 }
 
-// ============================================================================
-// TEMA & PALETTE "VIBE-CODED" (LIGHT & DARK NATIVO)
-// ============================================================================
-
 Color alphaCol(Color c, double opacity) =>
     c.withAlpha((opacity.clamp(0.0, 1.0) * 255).round());
+
+BoxDecoration cardDeco(Color card, Color border, [double radius = 24]) =>
+    BoxDecoration(
+      color: card,
+      borderRadius: BorderRadius.circular(radius),
+      border: Border.all(color: border),
+    );
 
 class VibePalette {
   static const Color primary = Color(0xFF635BFF);
   static const Color primaryGlow = Color(0xFF8B5CF6);
-
-  // Badge colorati: Rosso Verifiche, Giallo/Arancione Interrogazioni, Blu/Verde Compiti
   static const Color verificaRed = Color(0xFFFF4757);
   static const Color interrogazioneAmber = Color(0xFFFFA502);
   static const Color compitoBlueGreen = Color(0xFF00C2A8);
   static const Color altroPurple = Color(0xFFA855F7);
 
-  // Dark Mode
   static const Color darkBg = Color(0xFF080C16);
   static const Color darkCard = Color(0xFF111728);
   static const Color darkCardAlt = Color(0xFF161E33);
   static const Color darkBorder = Color(0xFF1F2A44);
 
-  // Light Mode
   static const Color lightBg = Color(0xFFF3F6FC);
   static const Color lightCard = Color(0xFFFFFFFF);
   static const Color lightCardAlt = Color(0xFFEEF2FA);
   static const Color lightBorder = Color(0xFFDCE3F0);
 
-  static ThemeData darkTheme() => ThemeData(
+  static ThemeData _base(Brightness b, Color bg, Color card, Color border, Color snackBg) =>
+      ThemeData(
         useMaterial3: true,
-        brightness: Brightness.dark,
-        colorScheme: const ColorScheme.dark(
+        brightness: b,
+        colorScheme: ColorScheme(
+          brightness: b,
           primary: primary,
+          onPrimary: Colors.white,
           secondary: primaryGlow,
-          surface: darkCard,
+          onSecondary: Colors.white,
           error: verificaRed,
+          onError: Colors.white,
+          surface: card,
+          onSurface: b == Brightness.dark ? Colors.white : const Color(0xFF0F172A),
         ),
-        scaffoldBackgroundColor: darkBg,
-        cardColor: darkCard,
-        dividerColor: darkBorder,
+        scaffoldBackgroundColor: bg,
+        cardColor: card,
+        dividerColor: border,
         snackBarTheme: SnackBarThemeData(
           behavior: SnackBarBehavior.floating,
-          backgroundColor: darkCardAlt,
+          backgroundColor: snackBg,
           contentTextStyle: const TextStyle(color: Colors.white),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         ),
       );
 
-  static ThemeData lightTheme() => ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.light,
-        colorScheme: const ColorScheme.light(
-          primary: primary,
-          secondary: primaryGlow,
-          surface: lightCard,
-          error: verificaRed,
-        ),
-        scaffoldBackgroundColor: lightBg,
-        cardColor: lightCard,
-        dividerColor: lightBorder,
-        snackBarTheme: SnackBarThemeData(
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: const Color(0xFF0F172A),
-          contentTextStyle: const TextStyle(color: Colors.white),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        ),
-      );
+  static ThemeData darkTheme() => _base(Brightness.dark, darkBg, darkCard, darkBorder, darkCardAlt);
+  static ThemeData lightTheme() =>
+      _base(Brightness.light, lightBg, lightCard, lightBorder, const Color(0xFF0F172A));
 }
 
 // ============================================================================
-// MODELLI DATI (EVENTI, VOTI, CREDENZIALI ARGO)
+// MODELLI DATI
 // ============================================================================
 
 enum EventCategory { verifica, interrogazione, compito, altro }
@@ -134,15 +123,10 @@ extension EventCategoryX on EventCategory {
 }
 
 class SchoolEvent {
-  final String id;
-  final String title;
-  final String subject;
-  final String notes;
+  final String id, title, subject, notes;
   final DateTime dateTime;
   final EventCategory category;
-  final bool highPriority;
-  final bool completed;
-  final bool fromArgo;
+  final bool highPriority, completed, fromArgo;
 
   const SchoolEvent({
     required this.id,
@@ -200,12 +184,8 @@ class SchoolEvent {
 }
 
 class SchoolGrade {
-  final String id;
-  final String subject;
-  final double value;
-  final double weight;
-  final String type; // Scritto, Orale, Pratico
-  final String description;
+  final String id, subject, type, description;
+  final double value, weight;
   final DateTime date;
   final bool fromArgo;
 
@@ -244,10 +224,7 @@ class SchoolGrade {
 }
 
 class ArgoCredentials {
-  final String schoolCode;
-  final String username;
-  final String password;
-  final String studentName;
+  final String schoolCode, username, password, studentName;
   final DateTime? lastSync;
 
   const ArgoCredentials({
@@ -260,7 +237,7 @@ class ArgoCredentials {
 }
 
 // ============================================================================
-// ARCHIVIAZIONE LOCALE OFFLINE (SHARED PREFERENCES)
+// STORAGE OFFLINE & NOTIFICHE LOCALI
 // ============================================================================
 
 class StorageService {
@@ -332,9 +309,7 @@ class StorageService {
     await _p.setString(_kUser, c.username.trim());
     await _p.setString(_kPass, c.password);
     await _p.setString(_kStudent, c.studentName);
-    if (c.lastSync != null) {
-      await _p.setString(_kSync, c.lastSync!.toIso8601String());
-    }
+    if (c.lastSync != null) await _p.setString(_kSync, c.lastSync!.toIso8601String());
   }
 
   Future<void> clearAll() async {
@@ -343,10 +318,6 @@ class StorageService {
     }
   }
 }
-
-// ============================================================================
-// NOTIFICHE PUSH LOCALI (GIORNO PRIMA 17:00 + MATTINA STESSA 07:15)
-// ============================================================================
 
 class NotificationService {
   NotificationService._();
@@ -361,14 +332,12 @@ class NotificationService {
     try {
       tz.setLocalLocation(tz.getLocation('Europe/Rome'));
     } catch (_) {}
-    const initSettings = InitializationSettings(
-      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-    );
     try {
-      await _plugin.initialize(initSettings);
+      await _plugin.initialize(const InitializationSettings(
+        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+      ));
       await _plugin
-          .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>()
+          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
           ?.requestNotificationsPermission();
       _ready = true;
     } catch (_) {}
@@ -403,29 +372,27 @@ class NotificationService {
 
     final now = DateTime.now();
     for (final ev in events) {
-      if (ev.completed) continue;
-      if (ev.category.isHighPriorityDefault || ev.highPriority) {
-        final baseDay = DateTime(ev.dateTime.year, ev.dateTime.month, ev.dateTime.day);
-        final dayBefore = baseDay.subtract(const Duration(days: 1)).add(const Duration(hours: 17));
-        final morningOf = baseDay.add(const Duration(hours: 7, minutes: 15));
-        final baseId = (ev.id.hashCode.abs() % 800000) + 100;
+      if (ev.completed || !(ev.category.isHighPriorityDefault || ev.highPriority)) continue;
+      final baseDay = DateTime(ev.dateTime.year, ev.dateTime.month, ev.dateTime.day);
+      final dayBefore = baseDay.subtract(const Duration(days: 1)).add(const Duration(hours: 17));
+      final morningOf = baseDay.add(const Duration(hours: 7, minutes: 15));
+      final baseId = (ev.id.hashCode.abs() % 800000) + 100;
 
-        if (dayBefore.isAfter(now)) {
-          await _schedule(
-            baseId,
-            '${ev.category.badgeDot} Domani: ${ev.category.label} di ${ev.subject}',
-            '${ev.title} — Ultimo ripasso pomeridiano, spacca tutto! 💪',
-            dayBefore,
-          );
-        }
-        if (morningOf.isAfter(now)) {
-          await _schedule(
-            baseId + 1,
-            '🔥 Oggi hai ${ev.category.label} di ${ev.subject}!',
-            '${ev.title} — Respira profondo, sei pronto! 🍀',
-            morningOf,
-          );
-        }
+      if (dayBefore.isAfter(now)) {
+        await _schedule(
+          baseId,
+          '${ev.category.badgeDot} Domani: ${ev.category.label} di ${ev.subject}',
+          '${ev.title} — Ultimo ripasso pomeridiano, spacca tutto! 💪',
+          dayBefore,
+        );
+      }
+      if (morningOf.isAfter(now)) {
+        await _schedule(
+          baseId + 1,
+          '🔥 Oggi hai ${ev.category.label} di ${ev.subject}!',
+          '${ev.title} — Respira profondo, sei pronto! 🍀',
+          morningOf,
+        );
       }
     }
   }
@@ -438,8 +405,7 @@ class NotificationService {
         body,
         tz.TZDateTime.from(when, tz.local),
         _details(),
-        uiLocalNotificationDateInterpretation:
-            UILocalNotificationDateInterpretation.absoluteTime,
+        uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
         androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
       );
     } catch (_) {}
@@ -463,67 +429,66 @@ class ArgoApiService {
   static const _defaultAppVersion = '1.30.2';
   static const _dataInizioDefault = '2000-01-01 00:00:00.000';
   static const _scuolaNextBase = 'https://www.portaleargo.it/famiglia/api/rest';
+  static const _ua =
+      'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Mobile Safari/537.36';
 
   static String _fmtArgoDate(DateTime d) =>
-      '${d.year.toString().padLeft(4, '0')}-'
-      '${d.month.toString().padLeft(2, '0')}-'
-      '${d.day.toString().padLeft(2, '0')} '
-      '${d.hour.toString().padLeft(2, '0')}:'
-      '${d.minute.toString().padLeft(2, '0')}:'
-      '${d.second.toString().padLeft(2, '0')}.'
+      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')} '
+      '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}:${d.second.toString().padLeft(2, '0')}.'
       '${d.millisecond.toString().padLeft(3, '0')}';
 
-  /// Recupera automaticamente l'ultima versione pubblicata di didUP Famiglia
-  /// sullo Store per evitare errori HTTP 410 quando Argo aggiorna l'app.
   static Future<String> _resolveClientVersion() async {
     try {
       final res = await http
-          .get(Uri.parse('https://itunes.apple.com/lookup?bundleId=it.argosoft.didup.famiglia.new&country=it'))
+          .get(Uri.parse(
+              'https://itunes.apple.com/lookup?bundleId=it.argosoft.didup.famiglia.new&country=it'))
           .timeout(const Duration(seconds: 6));
       if (res.statusCode == 200) {
-        final data = jsonDecode(res.body) as Map<String, dynamic>;
-        final results = (data['results'] as List?) ?? [];
+        final results = ((jsonDecode(res.body) as Map<String, dynamic>)['results'] as List?) ?? [];
         if (results.isNotEmpty) {
-          final storeVer = '${(results.first as Map<String, dynamic>)['version'] ?? ''}'.trim();
-          if (storeVer.isNotEmpty && _compareSemver(storeVer, _defaultAppVersion) >= 0) {
-            return storeVer;
-          }
+          final ver = '${(results.first as Map<String, dynamic>)['version'] ?? ''}'.trim();
+          if (ver.isNotEmpty && _cmpVer(ver, _defaultAppVersion) >= 0) return ver;
         }
       }
     } catch (_) {}
     return _defaultAppVersion;
   }
 
-  static int _compareSemver(String a, String b) {
+  static int _cmpVer(String a, String b) {
     final pa = a.split('.').map((x) => int.tryParse(x) ?? 0).toList();
     final pb = b.split('.').map((x) => int.tryParse(x) ?? 0).toList();
     for (int i = 0; i < 3; i++) {
-      final va = i < pa.length ? pa[i] : 0;
-      final vb = i < pb.length ? pb[i] : 0;
-      if (va != vb) return va.compareTo(vb);
+      final d = (i < pa.length ? pa[i] : 0).compareTo(i < pb.length ? pb[i] : 0);
+      if (d != 0) return d;
     }
     return 0;
   }
 
-  static void _collectCookies(HttpClientResponse res, List<String> cookies) {
+  static void _collectCookies(HttpClientResponse res, Map<String, String> jar) {
     final rawList = res.headers[HttpHeaders.setCookieHeader];
     if (rawList == null) return;
-    for (final header in rawList) {
-      final pair = header.split(';').first.trim();
-      if (pair.isNotEmpty) {
-        cookies.add(pair);
+    for (final h in rawList) {
+      final pair = h.split(';').first.trim();
+      final eq = pair.indexOf('=');
+      if (eq > 0) {
+        final k = pair.substring(0, eq).trim();
+        final v = pair.substring(eq + 1).trim();
+        if (v.isEmpty) {
+          jar.remove(k);
+        } else {
+          jar[k] = v;
+        }
       }
     }
   }
 
   static List<Map<String, dynamic>> _applyArgoOps(List<dynamic>? rawList) {
     if (rawList == null) return [];
-    final deleted = <String>{};
-    for (final item in rawList) {
-      if (item is Map<String, dynamic> && item['operazione'] == 'D' && item['pk'] != null) {
-        deleted.add('${item['pk']}');
-      }
-    }
+    final deleted = <String>{
+      for (final item in rawList)
+        if (item is Map<String, dynamic> && item['operazione'] == 'D' && item['pk'] != null)
+          '${item['pk']}',
+    };
     final out = <Map<String, dynamic>>[];
     final seen = <String>{};
     for (final item in rawList) {
@@ -570,25 +535,30 @@ class ArgoApiService {
       '&code_challenge_method=S256',
     );
 
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 25);
-    final cookies = <String>[];
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 25)
+      ..userAgent = _ua;
+    final cookies = <String, String>{};
 
     Future<HttpClientResponse> passo(
       String method,
       Uri uri, {
       String? formBody,
-      List<String>? sendCookies,
+      bool sendCookies = false,
     }) async {
       final req = await client.openUrl(method, uri);
       req.followRedirects = false;
-      if (sendCookies != null && sendCookies.isNotEmpty) {
-        req.headers.set(HttpHeaders.cookieHeader, sendCookies.join('; '));
+      if (sendCookies && cookies.isNotEmpty) {
+        req.headers.set(
+          HttpHeaders.cookieHeader,
+          cookies.entries.map((e) => '${e.key}=${e.value}').join('; '),
+        );
       }
       if (formBody != null) {
-        final bodyBytes = utf8.encode(formBody);
+        final bytes = utf8.encode(formBody);
         req.headers.set(HttpHeaders.contentTypeHeader, 'application/x-www-form-urlencoded');
-        req.contentLength = bodyBytes.length;
-        req.add(bodyBytes);
+        req.contentLength = bytes.length;
+        req.add(bytes);
       }
       final res = await req.close().timeout(const Duration(seconds: 25));
       await res.drain<void>();
@@ -596,22 +566,20 @@ class ArgoApiService {
     }
 
     try {
-      // 1) GET iniziale su auth.portaleargo.it -> raccoglie cookie OAuth + login_challenge
+      // 1) Richiesta iniziale OAuth2 -> cookie + login_challenge
       final r0 = await passo('GET', authUri);
       _collectCookies(r0, cookies);
       final loc0 = r0.headers.value(HttpHeaders.locationHeader);
-      if (loc0 == null) {
-        throw 'Impossibile iniziare il login OAuth Argo (HTTP ${r0.statusCode}).';
-      }
-      final challengeParam = authUri.resolve(loc0).queryParameters['login_challenge'];
-      if (challengeParam == null || challengeParam.isEmpty) {
-        throw 'Parametro login_challenge non restituito da Argo.';
+      if (loc0 == null) throw 'Connessione OAuth Argo non riuscita (HTTP ${r0.statusCode}).';
+      final loginChallenge = authUri.resolve(loc0).queryParameters['login_challenge'];
+      if (loginChallenge == null || loginChallenge.isEmpty) {
+        throw 'Parametro login_challenge non ricevuto da Argo.';
       }
 
-      // 2) POST credenziali su www.portaleargo.it/auth/sso/login (senza cookie, con prefill=false)
+      // 2) Invio credenziali SSO Argo (senza cookie, con prefill=false)
       final ssoUri = Uri.parse('https://www.portaleargo.it/auth/sso/login');
-      final formBody = [
-        'challenge=${Uri.encodeQueryComponent(challengeParam)}',
+      final body = [
+        'challenge=${Uri.encodeQueryComponent(loginChallenge)}',
         'client_id=${Uri.encodeQueryComponent(_clientId)}',
         'prefill=false',
         'famiglia_customer_code=${Uri.encodeQueryComponent(school)}',
@@ -620,19 +588,19 @@ class ArgoApiService {
         'login=true',
       ].join('&');
 
-      final r1 = await passo('POST', ssoUri, formBody: formBody);
+      final r1 = await passo('POST', ssoUri, formBody: body);
       final loc1 = r1.headers.value(HttpHeaders.locationHeader);
       if (loc1 == null || loc1.contains('/auth/sso/login')) {
-        throw 'Credenziali errate: controlla Codice Scuola ($school), Nome Utente e Password.';
+        throw 'Credenziali errate: verifica Codice Scuola ($school), Nome Utente e Password.';
       }
 
-      // 3) Catena di 3 redirect OAuth con invio cookie solo verso auth.portaleargo.it
+      // 3) Catena redirect OAuth con invio cookie solo su auth.portaleargo.it
       final url1 = ssoUri.resolve(loc1);
-      final r2 = await passo('GET', url1, sendCookies: cookies);
+      final r2 = await passo('GET', url1, sendCookies: true);
       _collectCookies(r2, cookies);
       final loc2 = r2.headers.value(HttpHeaders.locationHeader);
       if (loc2 == null) {
-        throw 'Login SSO interrotto: verifica credenziali o eventuale cambio password richiesto sul sito Argo.';
+        throw 'Login SSO interrotto: controlla le credenziali o se Argo richiede un cambio password.';
       }
 
       String callbackUrl;
@@ -642,18 +610,14 @@ class ArgoApiService {
         final url2 = url1.resolve(loc2);
         final r3 = await passo('GET', url2);
         final loc3 = r3.headers.value(HttpHeaders.locationHeader);
-        if (loc3 == null) {
-          throw 'Catena OAuth interrotta durante il consenso Argo.';
-        }
+        if (loc3 == null) throw 'Catena OAuth interrotta durante il consenso Argo.';
         if (loc3.startsWith('it.argosoft.didup.famiglia.new://')) {
           callbackUrl = loc3;
         } else {
           final url3 = url2.resolve(loc3);
-          final r4 = await passo('GET', url3, sendCookies: cookies);
+          final r4 = await passo('GET', url3, sendCookies: true);
           final loc4 = r4.headers.value(HttpHeaders.locationHeader);
-          if (loc4 == null) {
-            throw 'Redirect finale OAuth mancante da Argo.';
-          }
+          if (loc4 == null) throw 'Redirect finale OAuth mancante da Argo.';
           callbackUrl = loc4;
         }
       }
@@ -662,15 +626,15 @@ class ArgoApiService {
       if (authCode == null || authCode.isEmpty) {
         final err = Uri.parse(callbackUrl).queryParameters['error_description'] ??
             Uri.parse(callbackUrl).queryParameters['error'] ??
-            'codice autorizzazione assente';
+            'codice assente';
         throw 'Autorizzazione Argo rifiutata ($err).';
       }
 
-      // 4) Scambio code -> Bearer access_token
+      // 4) Scambio codice -> Bearer token
       final tokRes = await http
           .post(
             Uri.parse('https://auth.portaleargo.it/oauth2/token'),
-            headers: {'content-type': 'application/x-www-form-urlencoded'},
+            headers: {'content-type': 'application/x-www-form-urlencoded', 'user-agent': _ua},
             body: {
               'code': authCode,
               'grant_type': 'authorization_code',
@@ -683,11 +647,12 @@ class ArgoApiService {
 
       final tokJson = jsonDecode(tokRes.body) as Map<String, dynamic>;
       if (tokJson['access_token'] == null) {
-        throw 'Token OAuth non ottenuto: ${tokJson['error_description'] ?? tokJson['error'] ?? tokRes.statusCode}';
+        throw 'Token OAuth non ottenuto: ${tokJson['error_description'] ?? tokRes.statusCode}';
       }
       final bearer = '${tokJson['access_token']}';
-      final expDate = DateTime.now().add(Duration(seconds: (tokJson['expires_in'] as num?)?.toInt() ?? 3600));
-      final expStr = _fmtArgoDate(expDate);
+      final expStr = _fmtArgoDate(
+        DateTime.now().add(Duration(seconds: (tokJson['expires_in'] as num?)?.toInt() ?? 3600)),
+      );
 
       Map<String, String> didupHeaders([String? xToken, String? codMin]) => {
             'accept': 'application/json',
@@ -695,11 +660,12 @@ class ArgoApiService {
             'content-type': 'application/json; charset=utf-8',
             'authorization': 'Bearer $bearer',
             'x-date-exp-auth': expStr,
+            'user-agent': _ua,
             if (xToken != null) 'x-auth-token': xToken,
             if (codMin != null) 'x-cod-min': codMin,
           };
 
-      // 5) POST login sull'API AppFamiglia DidUP
+      // 5) Login API DidUP AppFamiglia
       final loginRes = await http
           .post(
             Uri.parse('https://www.portaleargo.it/appfamiglia/api/rest/login'),
@@ -713,56 +679,48 @@ class ArgoApiService {
           .timeout(const Duration(seconds: 25));
 
       if (loginRes.statusCode == 410) {
-        throw 'Versione protocollo DidUP ($appVersion) rifiutata dal server Argo (HTTP 410).';
+        throw 'Versione DidUP ($appVersion) rifiutata dal server Argo (HTTP 410).';
       }
       final loginRoot = jsonDecode(loginRes.body) as Map<String, dynamic>;
       if (loginRoot['success'] == false) {
         throw '${loginRoot['msg'] ?? 'Login applicativo Argo non riuscito'}';
       }
-      final profiliList = ((loginRoot['data'] as List?) ?? []).whereType<Map<String, dynamic>>().toList();
-      if (profiliList.isEmpty) {
-        throw 'Nessun profilo alunno attivo trovato su questo account Argo.';
-      }
+      final profili = ((loginRoot['data'] as List?) ?? []).whereType<Map<String, dynamic>>().toList();
+      if (profili.isEmpty) throw 'Nessun profilo alunno trovato su questo account Argo.';
 
-      // Seleziona il profilo attivo corrispondente al Codice Scuola
-      final activeProfiles = profiliList.where((p) => p['profiloDisabilitato'] != true).toList();
-      final candidates = activeProfiles.isNotEmpty ? activeProfiles : profiliList;
-      final loginData = candidates.firstWhere(
+      final attivi = profili.where((p) => p['profiloDisabilitato'] != true).toList();
+      final pool = attivi.isNotEmpty ? attivi : profili;
+      final prof = pool.firstWhere(
         (p) => '${p['codMin'] ?? ''}'.toUpperCase() == school,
-        orElse: () => candidates.first,
+        orElse: () => pool.first,
       );
 
-      final xToken = '${loginData['token'] ?? ''}';
-      final actualCodMin = '${loginData['codMin'] ?? school}';
+      final xToken = '${prof['token'] ?? ''}';
+      final codMin = '${prof['codMin'] ?? school}';
       final opzioniMap = <String, dynamic>{
-        for (final o in (loginData['opzioni'] as List? ?? []))
+        for (final o in (prof['opzioni'] as List? ?? []))
           if (o is Map<String, dynamic> && o['chiave'] != null) '${o['chiave']}': o['valore'],
       };
 
-      // 6) Nome studente da GET profilo
+      // 6) Profilo alunno
       String studentName = user;
       try {
-        final profRes = await http
-            .get(
-              Uri.parse('https://www.portaleargo.it/appfamiglia/api/rest/profilo'),
-              headers: didupHeaders(xToken, actualCodMin),
-            )
+        final pRes = await http
+            .get(Uri.parse('https://www.portaleargo.it/appfamiglia/api/rest/profilo'),
+                headers: didupHeaders(xToken, codMin))
             .timeout(const Duration(seconds: 15));
-        final profData = (jsonDecode(profRes.body) as Map<String, dynamic>)['data'];
-        if (profData is Map<String, dynamic>) {
-          final alunno = profData['alunno'];
-          if (alunno is Map<String, dynamic>) {
-            final nom = '${alunno['nominativo'] ?? ''}'.trim();
-            if (nom.isNotEmpty) studentName = nom;
-          }
+        final alunno = ((jsonDecode(pRes.body) as Map<String, dynamic>)['data'] as Map?)?['alunno'];
+        if (alunno is Map) {
+          final nom = '${alunno['nominativo'] ?? ''}'.trim();
+          if (nom.isNotEmpty) studentName = nom;
         }
       } catch (_) {}
 
-      // 7) POST dashboard/dashboard (con data 2000-01-01 per ricevere tutti i dati dell'anno)
+      // 7) Dashboard completa (compiti, promemoria/verifiche, voti)
       final dashRes = await http
           .post(
             Uri.parse('https://www.portaleargo.it/appfamiglia/api/rest/dashboard/dashboard'),
-            headers: didupHeaders(xToken, actualCodMin),
+            headers: didupHeaders(xToken, codMin),
             body: jsonEncode({
               'dataultimoaggiornamento': _dataInizioDefault,
               'opzioni': jsonEncode(opzioniMap),
@@ -772,30 +730,27 @@ class ArgoApiService {
 
       final dashRoot = jsonDecode(dashRes.body) as Map<String, dynamic>;
       if (dashRoot['success'] == false) {
-        throw '${dashRoot['msg'] ?? 'Errore scaricamento dashboard Argo'}';
+        throw '${dashRoot['msg'] ?? 'Errore scaricamento bacheca/dashboard Argo'}';
       }
-      final datiList = (dashRoot['data'] is Map<String, dynamic>)
-          ? ((dashRoot['data']['dati'] as List?) ?? [])
-          : [];
+      final datiList =
+          (dashRoot['data'] is Map<String, dynamic>) ? ((dashRoot['data']['dati'] as List?) ?? []) : [];
       if (datiList.isEmpty || datiList.first is! Map<String, dynamic>) {
         return ArgoSyncResult(events: [], grades: [], studentName: studentName);
       }
       final dash = datiList.first as Map<String, dynamic>;
 
-      // Associazione docente -> materia per arricchire i promemoria
-      final matByPk = <String, String>{};
-      for (final m in (dash['listaMaterie'] as List? ?? [])) {
-        if (m is Map<String, dynamic> && m['pk'] != null) {
-          matByPk['${m['pk']}'] = _cleanSubj('${m['materia'] ?? ''}');
-        }
-      }
+      final matByPk = <String, String>{
+        for (final m in (dash['listaMaterie'] as List? ?? []))
+          if (m is Map<String, dynamic> && m['pk'] != null)
+            '${m['pk']}': _cleanSubj('${m['materia'] ?? ''}'),
+      };
       final docMateria = <String, String>{};
-      for (final d in (dash['listaDocentiClasse'] as List? ?? [])) {
-        if (d is Map<String, dynamic> && d['pk'] != null) {
-          final ml = (d['materie'] as List?) ?? [];
+      for (final doc in (dash['listaDocentiClasse'] as List? ?? [])) {
+        if (doc is Map<String, dynamic> && doc['pk'] != null) {
+          final ml = (doc['materie'] as List?) ?? [];
           if (ml.isNotEmpty) {
             final k = '${ml.first}';
-            docMateria['${d['pk']}'] = matByPk[k] ?? _cleanSubj(k);
+            docMateria['${doc['pk']}'] = matByPk[k] ?? _cleanSubj(k);
           }
         }
       }
@@ -808,8 +763,8 @@ class ArgoApiService {
         if (txt.isEmpty) continue;
         final d = DateTime.tryParse('${m['datGiorno'] ?? ''}') ?? DateTime.now();
         final docName = '${m['docente'] ?? ''}'.trim();
-        final subj = docMateria['${m['pkDocente'] ?? ''}'] ??
-            (docName.isNotEmpty ? docName : 'Promemoria');
+        final subj =
+            docMateria['${m['pkDocente'] ?? ''}'] ?? (docName.isNotEmpty ? docName : 'Promemoria');
         final cat = classifyText(txt, EventCategory.verifica);
         events.add(SchoolEvent(
           id: 'argo_p_${m['pk'] ?? txt.hashCode}',
@@ -830,9 +785,8 @@ class ArgoApiService {
           if (c is! Map<String, dynamic>) continue;
           final txt = '${c['compito'] ?? ''}'.trim();
           if (txt.isEmpty) continue;
-          final dueRaw = '${c['dataConsegna'] ?? ''}'.trim();
-          final fallbackDay = '${m['datGiorno'] ?? ''}'.trim();
-          final d = DateTime.tryParse(dueRaw.isNotEmpty ? dueRaw : fallbackDay) ?? DateTime.now();
+          final due = '${c['dataConsegna'] ?? ''}'.trim();
+          final d = DateTime.tryParse(due.isNotEmpty ? due : '${m['datGiorno'] ?? ''}') ?? DateTime.now();
           final cat = classifyText(txt, EventCategory.compito);
           events.add(SchoolEvent(
             id: 'argo_c_${subj}_${d.toIso8601String()}_${txt.hashCode}',
@@ -879,10 +833,8 @@ class ArgoApiService {
       'X-Requested-With': 'XMLHttpRequest',
     };
     final lRes = await http
-        .get(
-          Uri.parse('$_scuolaNextBase/login?_dc=${DateTime.now().millisecondsSinceEpoch}'),
-          headers: {...baseHdr, 'x-cod-min': school, 'x-user-id': user, 'x-pwd': pass},
-        )
+        .get(Uri.parse('$_scuolaNextBase/login?_dc=${DateTime.now().millisecondsSinceEpoch}'),
+            headers: {...baseHdr, 'x-cod-min': school, 'x-user-id': user, 'x-pwd': pass})
         .timeout(const Duration(seconds: 15));
     final token = (jsonDecode(lRes.body) as Map<String, dynamic>)['token'] as String;
     final sRes = await http.get(
@@ -902,7 +854,8 @@ class ArgoApiService {
 
     final compRes = await http.get(Uri.parse('$_scuolaNextBase/compiti?page=1&start=0&limit=80'), headers: hdr);
     final promRes = await http.get(Uri.parse('$_scuolaNextBase/promemoria?page=1&start=0&limit=80'), headers: hdr);
-    final votiRes = await http.get(Uri.parse('$_scuolaNextBase/votigiornalieri?page=1&start=0&limit=100'), headers: hdr);
+    final votiRes =
+        await http.get(Uri.parse('$_scuolaNextBase/votigiornalieri?page=1&start=0&limit=100'), headers: hdr);
 
     final events = <SchoolEvent>[];
     final grades = <SchoolGrade>[];
@@ -984,7 +937,7 @@ class ArgoApiService {
 
   static ArgoSyncResult demoData() {
     final now = DateTime.now();
-    DateTime d(int addDays, int h) => DateTime(now.year, now.month, now.day + addDays, h, 15);
+    DateTime d(int add, int h) => DateTime(now.year, now.month, now.day + add, h, 15);
     return ArgoSyncResult(
       studentName: 'Studente Demo · 4ª Scientifico',
       events: [
@@ -1027,19 +980,61 @@ class ArgoApiService {
         ),
       ],
       grades: [
-        SchoolGrade(id: 'dg1', subject: 'Matematica', value: 7.5, type: 'Scritto', description: 'Esponenziali e logaritmi', date: now.subtract(const Duration(days: 16)), fromArgo: true),
-        SchoolGrade(id: 'dg2', subject: 'Matematica', value: 8.0, type: 'Orale', description: 'Studio di funzione', date: now.subtract(const Duration(days: 5)), fromArgo: true),
-        SchoolGrade(id: 'dg3', subject: 'Italiano', value: 7.0, type: 'Scritto', description: 'Tema argomentativo', date: now.subtract(const Duration(days: 12)), fromArgo: true),
-        SchoolGrade(id: 'dg4', subject: 'Fisica', value: 5.5, type: 'Scritto', description: 'Teorema di Gauss', date: now.subtract(const Duration(days: 10)), fromArgo: true),
-        SchoolGrade(id: 'dg5', subject: 'Inglese', value: 8.5, type: 'Orale', description: 'Victorian Age speaking', date: now.subtract(const Duration(days: 7)), fromArgo: true),
-        SchoolGrade(id: 'dg6', subject: 'Informatica', value: 9.0, type: 'Pratico', description: 'Database ER Biblioteca', date: now.subtract(const Duration(days: 3)), fromArgo: true),
+        SchoolGrade(
+            id: 'dg1',
+            subject: 'Matematica',
+            value: 7.5,
+            type: 'Scritto',
+            description: 'Esponenziali e logaritmi',
+            date: now.subtract(const Duration(days: 16)),
+            fromArgo: true),
+        SchoolGrade(
+            id: 'dg2',
+            subject: 'Matematica',
+            value: 8.0,
+            type: 'Orale',
+            description: 'Studio di funzione',
+            date: now.subtract(const Duration(days: 5)),
+            fromArgo: true),
+        SchoolGrade(
+            id: 'dg3',
+            subject: 'Italiano',
+            value: 7.0,
+            type: 'Scritto',
+            description: 'Tema argomentativo',
+            date: now.subtract(const Duration(days: 12)),
+            fromArgo: true),
+        SchoolGrade(
+            id: 'dg4',
+            subject: 'Fisica',
+            value: 5.5,
+            type: 'Scritto',
+            description: 'Teorema di Gauss',
+            date: now.subtract(const Duration(days: 10)),
+            fromArgo: true),
+        SchoolGrade(
+            id: 'dg5',
+            subject: 'Inglese',
+            value: 8.5,
+            type: 'Orale',
+            description: 'Victorian Age speaking',
+            date: now.subtract(const Duration(days: 7)),
+            fromArgo: true),
+        SchoolGrade(
+            id: 'dg6',
+            subject: 'Informatica',
+            value: 9.0,
+            type: 'Pratico',
+            description: 'Database ER Biblioteca',
+            date: now.subtract(const Duration(days: 3)),
+            fromArgo: true),
       ],
     );
   }
 }
 
 // ============================================================================
-// ROOT APP & HOME SHELL A 3 SCHERMATE
+// APP ROOT & HOME SHELL
 // ============================================================================
 
 class SchoolVibeApp extends StatefulWidget {
@@ -1083,7 +1078,12 @@ class HomeShell extends StatefulWidget {
   final bool isDark;
   final VoidCallback onToggleTheme;
 
-  const HomeShell({super.key, required this.storage, required this.isDark, required this.onToggleTheme});
+  const HomeShell({
+    super.key,
+    required this.storage,
+    required this.isDark,
+    required this.onToggleTheme,
+  });
 
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -1154,7 +1154,9 @@ class _HomeShellState extends State<HomeShell> {
   List<SchoolEvent> get _upcomingFiltered {
     final startToday = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
     return _events
-        .where((e) => (!e.dateTime.isBefore(startToday) || !e.completed) && (_catFilter == null || e.category == _catFilter))
+        .where((e) =>
+            (!e.dateTime.isBefore(startToday) || !e.completed) &&
+            (_catFilter == null || e.category == _catFilter))
         .toList()
       ..sort((a, b) => a.dateTime.compareTo(b.dateTime));
   }
@@ -1163,7 +1165,9 @@ class _HomeShellState extends State<HomeShell> {
     final now = DateTime.now();
     final start = DateTime(now.year, now.month, now.day);
     final end = start.add(const Duration(days: 7, hours: 23, minutes: 59));
-    return _events.where((e) => !e.completed && !e.dateTime.isBefore(start) && !e.dateTime.isAfter(end)).length;
+    return _events
+        .where((e) => !e.completed && !e.dateTime.isBefore(start) && !e.dateTime.isAfter(end))
+        .length;
   }
 
   int get _todoTotal => _events.where((e) => !e.completed).length;
@@ -1196,7 +1200,9 @@ class _HomeShellState extends State<HomeShell> {
       await _saveGrades();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('✅ Sincronizzati ${res.events.length} impegni e ${res.grades.length} voti!')),
+          SnackBar(
+              content:
+                  Text('✅ Sincronizzati ${res.events.length} impegni e ${res.grades.length} voti!')),
         );
       }
     } catch (e) {
@@ -1264,14 +1270,21 @@ class _HomeShellState extends State<HomeShell> {
           : Container(
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: const LinearGradient(colors: [VibePalette.primary, VibePalette.primaryGlow]),
-                boxShadow: [BoxShadow(color: alphaCol(VibePalette.primary, 0.45), blurRadius: 18, offset: const Offset(0, 6))],
+                gradient:
+                    const LinearGradient(colors: [VibePalette.primary, VibePalette.primaryGlow]),
+                boxShadow: [
+                  BoxShadow(
+                      color: alphaCol(VibePalette.primary, 0.45),
+                      blurRadius: 18,
+                      offset: const Offset(0, 6)),
+                ],
               ),
               child: FloatingActionButton(
                 elevation: 0,
                 backgroundColor: Colors.transparent,
                 foregroundColor: Colors.white,
-                onPressed: () => _tab == 0 ? _showAddEventModal(_selectedDay) : _showAddGradeModal(),
+                onPressed: () =>
+                    _tab == 0 ? _showAddEventModal(_selectedDay) : _showAddGradeModal(),
                 child: const Icon(CupertinoIcons.add, size: 28),
               ),
             ),
@@ -1318,7 +1331,12 @@ class _HomeShellState extends State<HomeShell> {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(15),
               gradient: const LinearGradient(colors: [VibePalette.primary, VibePalette.primaryGlow]),
-              boxShadow: [BoxShadow(color: alphaCol(VibePalette.primary, 0.42), blurRadius: 14, offset: const Offset(0, 4))],
+              boxShadow: [
+                BoxShadow(
+                    color: alphaCol(VibePalette.primary, 0.42),
+                    blurRadius: 14,
+                    offset: const Offset(0, 4)),
+              ],
             ),
             child: const Icon(CupertinoIcons.sparkles, color: Colors.white, size: 23),
           ),
@@ -1329,7 +1347,8 @@ class _HomeShellState extends State<HomeShell> {
               children: [
                 Row(
                   children: [
-                    Text('School Vibe', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: txt)),
+                    Text('School Vibe',
+                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: txt)),
                     if (_argo.lastSync != null) ...[
                       const SizedBox(width: 7),
                       Container(
@@ -1338,7 +1357,11 @@ class _HomeShellState extends State<HomeShell> {
                           color: alphaCol(VibePalette.compitoBlueGreen, 0.16),
                           borderRadius: BorderRadius.circular(7),
                         ),
-                        child: const Text('ARGO', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w900, color: VibePalette.compitoBlueGreen)),
+                        child: const Text('ARGO',
+                            style: TextStyle(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w900,
+                                color: VibePalette.compitoBlueGreen)),
                       ),
                     ],
                   ],
@@ -1352,9 +1375,11 @@ class _HomeShellState extends State<HomeShell> {
               ],
             ),
           ),
-          _iconCircleBtn(_notifyOn ? CupertinoIcons.bell : CupertinoIcons.bell_slash, d, border, _showNotificationSheet),
+          _iconCircleBtn(_notifyOn ? CupertinoIcons.bell : CupertinoIcons.bell_slash, d, border,
+              _showNotificationSheet),
           const SizedBox(width: 9),
-          _iconCircleBtn(d ? CupertinoIcons.moon_stars : CupertinoIcons.sun_max, d, border, widget.onToggleTheme),
+          _iconCircleBtn(d ? CupertinoIcons.moon_stars : CupertinoIcons.sun_max, d, border,
+              widget.onToggleTheme),
         ],
       ),
     );
@@ -1371,12 +1396,13 @@ class _HomeShellState extends State<HomeShell> {
             shape: BoxShape.circle,
             border: Border.all(color: border),
           ),
-          child: Icon(icon, size: 19, color: d ? const Color(0xFFE2E8F0) : const Color(0xFF1E293B)),
+          child:
+              Icon(icon, size: 19, color: d ? const Color(0xFFE2E8F0) : const Color(0xFF1E293B)),
         ),
       );
 
   // --------------------------------------------------------------------------
-  // SCHERMATA 1: DASHBOARD CALENDARIO & SCADENZE (SCROLL VERTICALE FLUIDO!)
+  // TAB 1: DASHBOARD CALENDARIO (CON SCROLL VERTICALE FLUIDO SBLOCCATO)
   // --------------------------------------------------------------------------
 
   Widget _buildDashboardTab(bool d, Color card, Color border) {
@@ -1385,7 +1411,8 @@ class _HomeShellState extends State<HomeShell> {
     final rawMonth = DateFormat('MMMM yyyy', 'it_IT').format(_focusedDay);
     final monthTitle = rawMonth[0].toUpperCase() + rawMonth.substring(1);
     final rawDay = DateFormat('EEEE d MMMM', 'it_IT').format(_selectedDay);
-    final dayTitle = rawDay.split(' ').map((w) => w.isEmpty ? w : w[0].toUpperCase() + w.substring(1)).join(' ');
+    final dayTitle =
+        rawDay.split(' ').map((w) => w.isEmpty ? w : w[0].toUpperCase() + w.substring(1)).join(' ');
     final dayEvents = _eventsForDay(_selectedDay);
 
     return ListView(
@@ -1394,11 +1421,17 @@ class _HomeShellState extends State<HomeShell> {
       children: [
         Row(
           children: [
-            Expanded(child: _kpiBox(CupertinoIcons.calendar_today, const [Color(0xFF635BFF), Color(0xFF8B5CF6)], _next7DaysCount, 'Prossimi 7 giorni', card, border, txt, muted)),
+            Expanded(
+                child: _kpiBox(CupertinoIcons.calendar_today, const [Color(0xFF635BFF), Color(0xFF8B5CF6)],
+                    _next7DaysCount, 'Prossimi 7 giorni', card, border, txt, muted)),
             const SizedBox(width: 10),
-            Expanded(child: _kpiBox(CupertinoIcons.checkmark_rectangle, const [Color(0xFF00B894), Color(0xFF00CEC9)], _todoTotal, 'Da fare in totale', card, border, txt, muted)),
+            Expanded(
+                child: _kpiBox(CupertinoIcons.checkmark_rectangle,
+                    const [Color(0xFF00B894), Color(0xFF00CEC9)], _todoTotal, 'Da fare in totale', card, border, txt, muted)),
             const SizedBox(width: 10),
-            Expanded(child: _kpiBox(CupertinoIcons.flame_fill, const [Color(0xFFFF5E3A), Color(0xFFFF2A68)], _highPrioTotal, 'Alta priorità', card, border, txt, muted)),
+            Expanded(
+                child: _kpiBox(CupertinoIcons.flame_fill, const [Color(0xFFFF5E3A), Color(0xFFFF2A68)],
+                    _highPrioTotal, 'Alta priorità', card, border, txt, muted)),
           ],
         ),
         const SizedBox(height: 15),
@@ -1411,7 +1444,10 @@ class _HomeShellState extends State<HomeShell> {
               alignment: Alignment.centerLeft,
               child: Text(
                 _vibeQuotes[_quoteIdx],
-                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: d ? const Color(0xFFCBD5E1) : const Color(0xFF334155)),
+                style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                    color: d ? const Color(0xFFCBD5E1) : const Color(0xFF334155)),
               ),
             ),
           ),
@@ -1421,12 +1457,14 @@ class _HomeShellState extends State<HomeShell> {
           alignment: Alignment.centerLeft,
           child: Container(
             padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(color: card, borderRadius: BorderRadius.circular(28), border: Border.all(color: border)),
+            decoration: cardDeco(card, border, 28),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _segBtn(!_isListView, CupertinoIcons.calendar, 'Calendario', muted, () => setState(() => _isListView = false)),
-                _segBtn(_isListView, CupertinoIcons.list_bullet, 'Lista', muted, () => setState(() => _isListView = true)),
+                _segBtn(!_isListView, CupertinoIcons.calendar, 'Calendario', muted,
+                    () => setState(() => _isListView = false)),
+                _segBtn(_isListView, CupertinoIcons.list_bullet, 'Lista', muted,
+                    () => setState(() => _isListView = true)),
               ],
             ),
           ),
@@ -1436,28 +1474,37 @@ class _HomeShellState extends State<HomeShell> {
           spacing: 8,
           runSpacing: 8,
           children: [
-            _filterChip('🌈 Tutti', _catFilter == null, VibePalette.primary, d, card, border, () => setState(() => _catFilter = null)),
+            _filterChip('🌈 Tutti', _catFilter == null, VibePalette.primary, d, card, border,
+                () => setState(() => _catFilter = null)),
             for (final c in EventCategory.values)
-              _filterChip('${c.chipEmoji} ${c.label}', _catFilter == c, c.color, d, card, border, () => setState(() => _catFilter = c)),
+              _filterChip('${c.chipEmoji} ${c.label}', _catFilter == c, c.color, d, card, border,
+                  () => setState(() => _catFilter = c)),
           ],
         ),
         const SizedBox(height: 16),
         if (!_isListView) ...[
           Container(
             padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
-            decoration: BoxDecoration(color: card, borderRadius: BorderRadius.circular(24), border: Border.all(color: border)),
+            decoration: cardDeco(card, border),
             child: Column(
               children: [
                 Row(
                   children: [
                     const SizedBox(width: 6),
-                    Expanded(child: Text(monthTitle, style: TextStyle(fontSize: 18.5, fontWeight: FontWeight.w800, color: txt))),
+                    Expanded(
+                        child: Text(monthTitle,
+                            style: TextStyle(fontSize: 18.5, fontWeight: FontWeight.w800, color: txt))),
                     InkWell(
-                      onTap: () => setState(() => _calFormat = _calFormat == CalendarFormat.month ? CalendarFormat.week : CalendarFormat.month),
+                      onTap: () => setState(() => _calFormat =
+                          _calFormat == CalendarFormat.month ? CalendarFormat.week : CalendarFormat.month),
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                        decoration: BoxDecoration(color: alphaCol(VibePalette.primary, 0.14), borderRadius: BorderRadius.circular(10)),
-                        child: Text(_calFormat == CalendarFormat.month ? 'Mese' : 'Sett.', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: VibePalette.primary)),
+                        decoration: BoxDecoration(
+                            color: alphaCol(VibePalette.primary, 0.14),
+                            borderRadius: BorderRadius.circular(10)),
+                        child: Text(_calFormat == CalendarFormat.month ? 'Mese' : 'Sett.',
+                            style: const TextStyle(
+                                fontSize: 11.5, fontWeight: FontWeight.w700, color: VibePalette.primary)),
                       ),
                     ),
                     TextButton(
@@ -1465,17 +1512,20 @@ class _HomeShellState extends State<HomeShell> {
                         _focusedDay = DateTime.now();
                         _selectedDay = DateTime.now();
                       }),
-                      child: const Text('Oggi', style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF818CF8))),
+                      child: const Text('Oggi',
+                          style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF818CF8))),
                     ),
                     IconButton(
                       visualDensity: VisualDensity.compact,
                       icon: Icon(CupertinoIcons.chevron_left, size: 17, color: muted),
-                      onPressed: () => setState(() => _focusedDay = DateTime(_focusedDay.year, _focusedDay.month - 1, 1)),
+                      onPressed: () =>
+                          setState(() => _focusedDay = DateTime(_focusedDay.year, _focusedDay.month - 1, 1)),
                     ),
                     IconButton(
                       visualDensity: VisualDensity.compact,
                       icon: Icon(CupertinoIcons.chevron_right, size: 17, color: muted),
-                      onPressed: () => setState(() => _focusedDay = DateTime(_focusedDay.year, _focusedDay.month + 1, 1)),
+                      onPressed: () =>
+                          setState(() => _focusedDay = DateTime(_focusedDay.year, _focusedDay.month + 1, 1)),
                     ),
                   ],
                 ),
@@ -1487,7 +1537,6 @@ class _HomeShellState extends State<HomeShell> {
                   focusedDay: _focusedDay,
                   calendarFormat: _calFormat,
                   startingDayOfWeek: StartingDayOfWeek.monday,
-                  // Sblocca lo scroll verticale quando si passa il dito sopra al calendario!
                   availableGestures: AvailableGestures.horizontalSwipe,
                   headerVisible: false,
                   selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
@@ -1501,7 +1550,8 @@ class _HomeShellState extends State<HomeShell> {
                   daysOfWeekHeight: 28,
                   rowHeight: 48,
                   daysOfWeekStyle: DaysOfWeekStyle(
-                    dowTextFormatter: (dt, loc) => DateFormat.E(loc).format(dt).replaceAll('.', '').toUpperCase(),
+                    dowTextFormatter: (dt, loc) =>
+                        DateFormat.E(loc).format(dt).replaceAll('.', '').toUpperCase(),
                     weekdayStyle: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: muted),
                     weekendStyle: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: muted),
                   ),
@@ -1516,11 +1566,18 @@ class _HomeShellState extends State<HomeShell> {
                     ),
                     todayTextStyle: TextStyle(fontWeight: FontWeight.w800, color: txt),
                     selectedDecoration: BoxDecoration(
-                      gradient: const LinearGradient(colors: [VibePalette.primary, VibePalette.primaryGlow]),
+                      gradient:
+                          const LinearGradient(colors: [VibePalette.primary, VibePalette.primaryGlow]),
                       borderRadius: BorderRadius.circular(14),
-                      boxShadow: [BoxShadow(color: alphaCol(VibePalette.primary, 0.4), blurRadius: 10, offset: const Offset(0, 4))],
+                      boxShadow: [
+                        BoxShadow(
+                            color: alphaCol(VibePalette.primary, 0.4),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4)),
+                      ],
                     ),
-                    selectedTextStyle: const TextStyle(fontWeight: FontWeight.w800, color: Colors.white),
+                    selectedTextStyle:
+                        const TextStyle(fontWeight: FontWeight.w800, color: Colors.white),
                   ),
                   calendarBuilders: CalendarBuilders(
                     markerBuilder: (_, __, evs) => evs.isEmpty
@@ -1529,12 +1586,16 @@ class _HomeShellState extends State<HomeShell> {
                             bottom: 4,
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
-                              children: evs.take(4).map((e) => Container(
-                                    width: 6,
-                                    height: 6,
-                                    margin: const EdgeInsets.symmetric(horizontal: 1.5),
-                                    decoration: BoxDecoration(color: e.category.color, shape: BoxShape.circle),
-                                  )).toList(),
+                              children: evs
+                                  .take(4)
+                                  .map((e) => Container(
+                                        width: 6,
+                                        height: 6,
+                                        margin: const EdgeInsets.symmetric(horizontal: 1.5),
+                                        decoration: BoxDecoration(
+                                            color: e.category.color, shape: BoxShape.circle),
+                                      ))
+                                  .toList(),
                             ),
                           ),
                   ),
@@ -1549,9 +1610,14 @@ class _HomeShellState extends State<HomeShell> {
                       .map((c) => Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Container(width: 9, height: 9, decoration: BoxDecoration(color: c.color, shape: BoxShape.circle)),
+                              Container(
+                                  width: 9,
+                                  height: 9,
+                                  decoration: BoxDecoration(color: c.color, shape: BoxShape.circle)),
                               const SizedBox(width: 6),
-                              Text(c.label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: muted)),
+                              Text(c.label,
+                                  style: TextStyle(
+                                      fontSize: 12, fontWeight: FontWeight.w600, color: muted)),
                             ],
                           ))
                       .toList(),
@@ -1562,13 +1628,15 @@ class _HomeShellState extends State<HomeShell> {
           const SizedBox(height: 16),
           Container(
             padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(color: card, borderRadius: BorderRadius.circular(24), border: Border.all(color: border)),
+            decoration: cardDeco(card, border),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
-                    Expanded(child: Text(dayTitle, style: TextStyle(fontSize: 17.5, fontWeight: FontWeight.w800, color: txt))),
+                    Expanded(
+                        child: Text(dayTitle,
+                            style: TextStyle(fontSize: 17.5, fontWeight: FontWeight.w800, color: txt))),
                     InkWell(
                       borderRadius: BorderRadius.circular(20),
                       onTap: () => _showAddEventModal(_selectedDay),
@@ -1579,7 +1647,11 @@ class _HomeShellState extends State<HomeShell> {
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(color: alphaCol(VibePalette.primary, 0.4)),
                         ),
-                        child: const Text('+ Aggiungi', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF818CF8))),
+                        child: const Text('+ Aggiungi',
+                            style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF818CF8))),
                       ),
                     ),
                   ],
@@ -1599,7 +1671,9 @@ class _HomeShellState extends State<HomeShell> {
                         children: [
                           const Text('🌴', style: TextStyle(fontSize: 42)),
                           const SizedBox(height: 10),
-                          Text(_chillEmptyQuotes[_emptyIdx], textAlign: TextAlign.center, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: muted)),
+                          Text(_chillEmptyQuotes[_emptyIdx],
+                              textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: muted)),
                         ],
                       ),
                     ),
@@ -1615,47 +1689,58 @@ class _HomeShellState extends State<HomeShell> {
     );
   }
 
-  Widget _kpiBox(IconData icon, List<Color> grad, int val, String label, Color card, Color border, Color txt, Color muted) =>
+  Widget _kpiBox(IconData icon, List<Color> grad, int val, String label, Color card, Color border,
+          Color txt, Color muted) =>
       Container(
         padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(color: card, borderRadius: BorderRadius.circular(22), border: Border.all(color: border)),
+        decoration: cardDeco(card, border, 22),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
               width: 38,
               height: 38,
-              decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), gradient: LinearGradient(colors: grad)),
+              decoration:
+                  BoxDecoration(borderRadius: BorderRadius.circular(12), gradient: LinearGradient(colors: grad)),
               child: Icon(icon, color: Colors.white, size: 19),
             ),
             const SizedBox(height: 12),
             Text('$val', style: TextStyle(fontSize: 25, fontWeight: FontWeight.w800, color: txt)),
             const SizedBox(height: 2),
-            Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: muted)),
+            Text(label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: muted)),
           ],
         ),
       );
 
-  Widget _segBtn(bool active, IconData icon, String label, Color muted, VoidCallback onTap) => GestureDetector(
+  Widget _segBtn(bool active, IconData icon, String label, Color muted, VoidCallback onTap) =>
+      GestureDetector(
         onTap: onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(horizontal: 17, vertical: 9),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(24),
-            gradient: active ? const LinearGradient(colors: [VibePalette.primary, VibePalette.primaryGlow]) : null,
+            gradient: active
+                ? const LinearGradient(colors: [VibePalette.primary, VibePalette.primaryGlow])
+                : null,
           ),
           child: Row(
             children: [
               Icon(icon, size: 15, color: active ? Colors.white : muted),
               const SizedBox(width: 6),
-              Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: active ? Colors.white : muted)),
+              Text(label,
+                  style: TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w700, color: active ? Colors.white : muted)),
             ],
           ),
         ),
       );
 
-  Widget _filterChip(String text, bool sel, Color accent, bool d, Color card, Color border, VoidCallback onTap) =>
+  Widget _filterChip(String text, bool sel, Color accent, bool d, Color card, Color border,
+          VoidCallback onTap) =>
       GestureDetector(
         onTap: onTap,
         child: Container(
@@ -1670,7 +1755,9 @@ class _HomeShellState extends State<HomeShell> {
             style: TextStyle(
               fontSize: 12.5,
               fontWeight: sel ? FontWeight.w700 : FontWeight.w500,
-              color: sel ? (d ? Colors.white : accent) : (d ? const Color(0xFFCBD5E1) : const Color(0xFF334155)),
+              color: sel
+                  ? (d ? Colors.white : accent)
+                  : (d ? const Color(0xFFCBD5E1) : const Color(0xFF334155)),
             ),
           ),
         ),
@@ -1699,7 +1786,8 @@ class _HomeShellState extends State<HomeShell> {
                   style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white70),
                 ),
                 const SizedBox(height: 6),
-                Text('${nextEv.subject} — ${nextEv.title}', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Colors.white)),
+                Text('${nextEv.subject} — ${nextEv.title}',
+                    style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Colors.white)),
                 const SizedBox(height: 12),
                 Row(
                   children: [
@@ -1718,7 +1806,7 @@ class _HomeShellState extends State<HomeShell> {
         Container(
           width: double.infinity,
           padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(color: card, borderRadius: BorderRadius.circular(24), border: Border.all(color: border)),
+          decoration: cardDeco(card, border),
           child: list.isEmpty
               ? Padding(
                   padding: const EdgeInsets.symmetric(vertical: 26),
@@ -1726,7 +1814,8 @@ class _HomeShellState extends State<HomeShell> {
                     children: [
                       const Text('🎉', style: TextStyle(fontSize: 40)),
                       const SizedBox(height: 8),
-                      Text('Nessuna scadenza in programma! Rilassati o sincronizza Argo.', textAlign: TextAlign.center, style: TextStyle(color: muted)),
+                      Text('Nessuna scadenza in programma! Rilassati o sincronizza Argo.',
+                          textAlign: TextAlign.center, style: TextStyle(color: muted)),
                     ],
                   ),
                 )
@@ -1738,11 +1827,13 @@ class _HomeShellState extends State<HomeShell> {
 
   Widget _cdBox(String val, String unit) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-        decoration: BoxDecoration(color: alphaCol(Colors.black, 0.24), borderRadius: BorderRadius.circular(12)),
+        decoration:
+            BoxDecoration(color: alphaCol(Colors.black, 0.24), borderRadius: BorderRadius.circular(12)),
         child: Column(
           children: [
             Text(val, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white)),
-            Text(unit, style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: Colors.white70)),
+            Text(unit,
+                style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: Colors.white70)),
           ],
         ),
       );
@@ -1769,4 +1860,724 @@ class _HomeShellState extends State<HomeShell> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           GestureDetector(
-            onTap: () async 
+            onTap: () async {
+              final i = _events.indexWhere((x) => x.id == ev.id);
+              if (i != -1) {
+                setState(() => _events[i] = _events[i].copyWith(completed: !ev.completed));
+                await _saveEvents();
+              }
+            },
+            child: Container(
+              width: 24,
+              height: 24,
+              margin: const EdgeInsets.only(top: 2),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: ev.completed ? VibePalette.compitoBlueGreen : alphaCol(c, 0.15),
+                border: Border.all(color: ev.completed ? VibePalette.compitoBlueGreen : c, width: 2),
+              ),
+              child: ev.completed ? const Icon(Icons.check, size: 15, color: Colors.white) : null,
+            ),
+          ),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 5,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                      decoration:
+                          BoxDecoration(color: alphaCol(c, 0.18), borderRadius: BorderRadius.circular(7)),
+                      child: Text('${ev.category.badgeDot} ${ev.category.label}',
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: c)),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                          color: alphaCol(VibePalette.primary, 0.16), borderRadius: BorderRadius.circular(7)),
+                      child: Text(ev.subject,
+                          style: const TextStyle(
+                              fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF818CF8))),
+                    ),
+                    if (!ev.completed)
+                      Text('⏱ ${_countdownText(ev.dateTime)}',
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: txt)),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  ev.title,
+                  style: TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w700,
+                    color: ev.completed ? muted : txt,
+                    decoration: ev.completed ? TextDecoration.lineThrough : null,
+                  ),
+                ),
+                if (ev.notes.isNotEmpty) Text(ev.notes, style: TextStyle(fontSize: 12, color: muted)),
+                const SizedBox(height: 4),
+                Text(
+                  '${DateFormat('EEE d MMM · HH:mm', 'it_IT').format(ev.dateTime)}${ev.fromArgo ? ' · Sincronizzato da Argo' : ''}',
+                  style: TextStyle(fontSize: 11, color: muted),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            icon: Icon(CupertinoIcons.trash, size: 17, color: muted),
+            onPressed: () async {
+              setState(() => _events.removeWhere((x) => x.id == ev.id));
+              await _saveEvents();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --------------------------------------------------------------------------
+  // TAB 2: VOTI & MEDIE (PONDERATA / ARITMETICA)
+  // --------------------------------------------------------------------------
+
+  double _avg(List<SchoolGrade> list) {
+    if (list.isEmpty) return 0;
+    if (!_weightedAvg) return list.fold<double>(0, (a, g) => a + g.value) / list.length;
+    final valid = list.where((g) => g.weight > 0).toList();
+    if (valid.isEmpty) return 0;
+    final wSum = valid.fold<double>(0, (a, g) => a + g.value * g.weight);
+    final wTot = valid.fold<double>(0, (a, g) => a + g.weight);
+    return wTot == 0 ? 0 : wSum / wTot;
+  }
+
+  Color _gradeCol(double v) => v >= 6.0
+      ? VibePalette.compitoBlueGreen
+      : (v >= 5.5 ? VibePalette.interrogazioneAmber : VibePalette.verificaRed);
+
+  Widget _buildGradesTab(bool d, Color card, Color border) {
+    final txt = d ? Colors.white : const Color(0xFF0F172A);
+    final muted = d ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
+    final grouped = <String, List<SchoolGrade>>{};
+    for (final g in _grades) {
+      grouped.putIfAbsent(g.subject, () => []).add(g);
+    }
+    final subjects = grouped.keys.toList()..sort();
+    final totalAvg = _avg(_grades);
+
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 96),
+      children: [
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: cardDeco(card, border),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 82,
+                height: 82,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    SizedBox(
+                      width: 78,
+                      height: 78,
+                      child: CircularProgressIndicator(
+                        value: (_grades.isEmpty ? 0.0 : totalAvg / 10.0).clamp(0.0, 1.0),
+                        strokeWidth: 8,
+                        backgroundColor: alphaCol(muted, 0.18),
+                        valueColor: AlwaysStoppedAnimation(
+                            _grades.isEmpty ? VibePalette.primary : _gradeCol(totalAvg)),
+                      ),
+                    ),
+                    Text(_grades.isEmpty ? '--' : totalAvg.toStringAsFixed(2),
+                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: txt)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(_weightedAvg ? 'Media Generale Ponderata' : 'Media Generale Aritmetica',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: txt)),
+                    const SizedBox(height: 4),
+                    Text('${_grades.length} voti in ${subjects.length} materie',
+                        style: TextStyle(fontSize: 12.5, color: muted)),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        ChoiceChip(
+                            label: const Text('Ponderata'),
+                            selected: _weightedAvg,
+                            onSelected: (_) => setState(() => _weightedAvg = true)),
+                        ChoiceChip(
+                            label: const Text('Aritmetica'),
+                            selected: !_weightedAvg,
+                            onSelected: (_) => setState(() => _weightedAvg = false)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        if (subjects.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(28),
+            decoration: cardDeco(card, border),
+            child: Column(
+              children: [
+                const Text('📊', style: TextStyle(fontSize: 42)),
+                const SizedBox(height: 10),
+                Text('Nessun voto presente',
+                    style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.w800, color: txt)),
+                const SizedBox(height: 6),
+                Text('Sincronizza Argo nella scheda "Argo & Sync" o premi + per inserire un voto.',
+                    textAlign: TextAlign.center, style: TextStyle(color: muted)),
+              ],
+            ),
+          )
+        else
+          ...subjects.map((s) {
+            final list = grouped[s]!;
+            final m = _avg(list);
+            final col = _gradeCol(m);
+            final target = m < 6.0 ? 6.0 : 8.0;
+            final needed = target * (list.length + 1) - list.fold<double>(0, (a, b) => a + b.value);
+
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: cardDeco(card, border, 20),
+              child: ExpansionTile(
+                shape: const Border(),
+                collapsedShape: const Border(),
+                leading: Container(
+                  width: 46,
+                  height: 46,
+                  alignment: Alignment.center,
+                  decoration:
+                      BoxDecoration(color: alphaCol(col, 0.16), borderRadius: BorderRadius.circular(13)),
+                  child: Text(m.toStringAsFixed(1),
+                      style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w900, color: col)),
+                ),
+                title: Text(s, style: TextStyle(fontWeight: FontWeight.w800, color: txt)),
+                subtitle: Text(
+                  needed > 0 && needed <= 10
+                      ? '${list.length} voti · Per il ${target.toInt()} serve ${needed.toStringAsFixed(1)}'
+                      : '${list.length} voti · Ottima media! 🔥',
+                  style: TextStyle(fontSize: 12, color: muted),
+                ),
+                children: list.map((g) {
+                  final gc = _gradeCol(g.value);
+                  return ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: alphaCol(gc, 0.18),
+                      child: Text(g.value.toStringAsFixed(1),
+                          style: TextStyle(fontWeight: FontWeight.w800, color: gc, fontSize: 13)),
+                    ),
+                    title: Text(g.description.isEmpty ? 'Prova ${g.type}' : g.description,
+                        style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: txt)),
+                    subtitle: Text(
+                      '${g.type} · Peso ${(g.weight * 100).round()}% · ${DateFormat('dd/MM/yyyy').format(g.date)}${g.fromArgo ? ' · ARGO' : ''}',
+                      style: TextStyle(fontSize: 11.5, color: muted),
+                    ),
+                    trailing: IconButton(
+                      icon: Icon(CupertinoIcons.trash, size: 17, color: muted),
+                      onPressed: () async {
+                        setState(() => _grades.removeWhere((x) => x.id == g.id));
+                        await _saveGrades();
+                      },
+                    ),
+                  );
+                }).toList(),
+              ),
+            );
+          }),
+      ],
+    );
+  }
+
+  // --------------------------------------------------------------------------
+  // MODALI NOTIFICHE, NUOVO IMPEGNO E NUOVO VOTO
+  // --------------------------------------------------------------------------
+
+  void _showNotificationSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: widget.isDark ? VibePalette.darkCard : VibePalette.lightCard,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.all(22),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('🔔 Promemoria Automatici',
+                style: TextStyle(fontSize: 18.5, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 8),
+            const Text(
+                'Ricevi notifiche push locali il giorno prima (17:00) e la mattina stessa (07:15) di ogni Verifica o Interrogazione.'),
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () async {
+                  await NotificationService.instance.sendTestNotification();
+                  if (ctx.mounted) Navigator.pop(ctx);
+                },
+                icon: const Icon(CupertinoIcons.bell_fill, size: 18),
+                label: const Text('Invia Notifica di Prova'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showAddEventModal(DateTime baseDate) {
+    final subjCtrl = TextEditingController(text: 'Matematica');
+    final titleCtrl = TextEditingController();
+    final notesCtrl = TextEditingController();
+    var cat = EventCategory.verifica;
+    var dt = DateTime(baseDate.year, baseDate.month, baseDate.day, 8, 15);
+    var prio = true;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: widget.isDark ? VibePalette.darkCard : VibePalette.lightCard,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setM) => Padding(
+          padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 22),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('✨ Nuovo Impegno',
+                    style: TextStyle(fontSize: 18.5, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  children: EventCategory.values
+                      .map((c) => ChoiceChip(
+                            label: Text('${c.badgeDot} ${c.label}'),
+                            selected: cat == c,
+                            onSelected: (_) => setM(() {
+                              cat = c;
+                              prio = c.isHighPriorityDefault;
+                            }),
+                          ))
+                      .toList(),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                    controller: subjCtrl,
+                    decoration:
+                        const InputDecoration(labelText: 'Materia', border: OutlineInputBorder())),
+                const SizedBox(height: 10),
+                TextField(
+                    controller: titleCtrl,
+                    decoration: const InputDecoration(
+                        labelText: 'Argomento / Titolo', border: OutlineInputBorder())),
+                const SizedBox(height: 10),
+                TextField(
+                    controller: notesCtrl,
+                    decoration: const InputDecoration(
+                        labelText: 'Note (opzionale)', border: OutlineInputBorder())),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        icon: const Icon(CupertinoIcons.calendar, size: 16),
+                        label: Text(DateFormat('dd/MM/yyyy').format(dt)),
+                        onPressed: () async {
+                          final p = await showDatePicker(
+                              context: ctx,
+                              initialDate: dt,
+                              firstDate: DateTime(2023),
+                              lastDate: DateTime(2030));
+                          if (p != null) {
+                            setM(() => dt = DateTime(p.year, p.month, p.day, dt.hour, dt.minute));
+                          }
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        icon: const Icon(CupertinoIcons.clock, size: 16),
+                        label: Text(DateFormat('HH:mm').format(dt)),
+                        onPressed: () async {
+                          final t = await showTimePicker(
+                              context: ctx, initialTime: TimeOfDay.fromDateTime(dt));
+                          if (t != null) {
+                            setM(() => dt = DateTime(dt.year, dt.month, dt.day, t.hour, t.minute));
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('🔥 Alta priorità & Promemoria push'),
+                  value: prio,
+                  onChanged: (v) => setM(() => prio = v),
+                ),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: () async {
+                      final s = subjCtrl.text.trim().isEmpty ? 'Materia' : subjCtrl.text.trim();
+                      final t =
+                          titleCtrl.text.trim().isEmpty ? '${cat.label} di $s' : titleCtrl.text.trim();
+                      setState(() {
+                        _events.add(SchoolEvent(
+                          id: 'm_${DateTime.now().millisecondsSinceEpoch}',
+                          title: t,
+                          subject: s,
+                          notes: notesCtrl.text.trim(),
+                          dateTime: dt,
+                          category: cat,
+                          highPriority: prio,
+                        ));
+                        _selectedDay = dt;
+                        _focusedDay = dt;
+                      });
+                      await _saveEvents();
+                      if (ctx.mounted) Navigator.pop(ctx);
+                    },
+                    child: const Text('Salva Impegno'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showAddGradeModal() {
+    final subjCtrl = TextEditingController(text: 'Matematica');
+    final descCtrl = TextEditingController();
+    double val = 7.0;
+    double weight = 1.0;
+    String type = 'Scritto';
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: widget.isDark ? VibePalette.darkCard : VibePalette.lightCard,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setM) => Padding(
+          padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 22),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('🎯 Nuovo Voto',
+                    style: TextStyle(fontSize: 18.5, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 12),
+                TextField(
+                    controller: subjCtrl,
+                    decoration:
+                        const InputDecoration(labelText: 'Materia', border: OutlineInputBorder())),
+                const SizedBox(height: 10),
+                Text('Voto: ${val.toStringAsFixed(2)}  ·  Peso: ${(weight * 100).round()}%',
+                    style: const TextStyle(fontWeight: FontWeight.w800)),
+                Slider(value: val, min: 1, max: 10, divisions: 36, onChanged: (v) => setM(() => val = v)),
+                Slider(
+                    value: weight,
+                    min: 0.25,
+                    max: 1.0,
+                    divisions: 3,
+                    onChanged: (v) => setM(() => weight = v)),
+                Wrap(
+                  spacing: 8,
+                  children: ['Scritto', 'Orale', 'Pratico']
+                      .map((t) => ChoiceChip(
+                          label: Text(t), selected: type == t, onSelected: (_) => setM(() => type = t)))
+                      .toList(),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                    controller: descCtrl,
+                    decoration: const InputDecoration(
+                        labelText: 'Argomento (opzionale)', border: OutlineInputBorder())),
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: () async {
+                      setState(() {
+                        _grades.add(SchoolGrade(
+                          id: 'g_${DateTime.now().millisecondsSinceEpoch}',
+                          subject: subjCtrl.text.trim().isEmpty ? 'Materia' : subjCtrl.text.trim(),
+                          value: val,
+                          weight: weight,
+                          type: type,
+                          description: descCtrl.text.trim(),
+                          date: DateTime.now(),
+                        ));
+                      });
+                      await _saveGrades();
+                      if (ctx.mounted) Navigator.pop(ctx);
+                    },
+                    child: const Text('Registra Voto'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// TAB 3: LOGIN REGISTRO ARGO & IMPOSTAZIONI
+// ============================================================================
+
+class _ArgoSettingsTab extends StatefulWidget {
+  final bool isDark;
+  final Color cardColor, borderColor;
+  final ArgoCredentials creds;
+  final bool syncing, notifyOn;
+  final String? lastError;
+  final Future<void> Function(String s, String u, String p) onSync;
+  final Future<void> Function(String s, String u, String p) onDemo;
+  final ValueChanged<bool> onToggleNotify;
+  final VoidCallback onReset;
+
+  const _ArgoSettingsTab({
+    required this.isDark,
+    required this.cardColor,
+    required this.borderColor,
+    required this.creds,
+    required this.syncing,
+    required this.lastError,
+    required this.notifyOn,
+    required this.onSync,
+    required this.onDemo,
+    required this.onToggleNotify,
+    required this.onReset,
+  });
+
+  @override
+  State<_ArgoSettingsTab> createState() => _ArgoSettingsTabState();
+}
+
+class _ArgoSettingsTabState extends State<_ArgoSettingsTab> {
+  late final _schoolCtrl = TextEditingController(text: widget.creds.schoolCode);
+  late final _userCtrl = TextEditingController(text: widget.creds.username);
+  late final _passCtrl = TextEditingController(text: widget.creds.password);
+  bool _obscure = true;
+
+  @override
+  void dispose() {
+    _schoolCtrl.dispose();
+    _userCtrl.dispose();
+    _passCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final txt = widget.isDark ? Colors.white : const Color(0xFF0F172A);
+    final muted = widget.isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
+
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 40),
+      children: [
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: cardDeco(widget.cardColor, widget.borderColor),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('☁️ Login Registro Elettronico Argo',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: txt)),
+              const SizedBox(height: 4),
+              Text(
+                widget.creds.lastSync != null
+                    ? 'Ultima sincronizzazione: ${DateFormat('dd/MM/yyyy HH:mm').format(widget.creds.lastSync!)}'
+                    : 'Sincronizza compiti, verifiche e voti con DidUP Famiglia',
+                style: TextStyle(fontSize: 12.5, color: muted),
+              ),
+              if (widget.lastError != null && widget.lastError!.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: alphaCol(VibePalette.verificaRed, 0.14),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: alphaCol(VibePalette.verificaRed, 0.5)),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.error_outline_rounded,
+                          color: VibePalette.verificaRed, size: 19),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: SelectableText(
+                          widget.lastError!,
+                          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: txt),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+              TextField(
+                controller: _schoolCtrl,
+                textCapitalization: TextCapitalization.characters,
+                decoration: const InputDecoration(
+                  labelText: 'Codice Scuola (es. SG12345)',
+                  prefixIcon: Icon(CupertinoIcons.building_2_fill),
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _userCtrl,
+                autocorrect: false,
+                decoration: const InputDecoration(
+                  labelText: 'Nome Utente Argo',
+                  prefixIcon: Icon(CupertinoIcons.person_fill),
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _passCtrl,
+                obscureText: _obscure,
+                decoration: InputDecoration(
+                  labelText: 'Password',
+                  prefixIcon: const Icon(CupertinoIcons.lock_fill),
+                  border: const OutlineInputBorder(),
+                  suffixIcon: IconButton(
+                    icon: Icon(_obscure ? CupertinoIcons.eye : CupertinoIcons.eye_slash),
+                    onPressed: () => setState(() => _obscure = !_obscure),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: widget.syncing
+                      ? null
+                      : () {
+                          if (_schoolCtrl.text.trim().isEmpty ||
+                              _userCtrl.text.trim().isEmpty ||
+                              _passCtrl.text.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text('Inserisci Codice Scuola, Nome utente e Password.')),
+                            );
+                            return;
+                          }
+                          widget.onSync(_schoolCtrl.text, _userCtrl.text, _passCtrl.text);
+                        },
+                  icon: widget.syncing
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Icon(CupertinoIcons.arrow_2_circlepath),
+                  label: Text(widget.syncing ? 'Sincronizzazione...' : 'Sincronizza Registro Argo'),
+                ),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: widget.syncing
+                      ? null
+                      : () => widget.onDemo(_schoolCtrl.text, _userCtrl.text, _passCtrl.text),
+                  icon: const Icon(CupertinoIcons.sparkles, size: 17),
+                  label: const Text('Carica Dati Demo Studenti (Test Rapido)'),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.all(18),
+          decoration: cardDeco(widget.cardColor, widget.borderColor),
+          child: Column(
+            children: [
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Promemoria automatici (17:00 e 07:15)'),
+                value: widget.notifyOn,
+                onChanged: widget.onToggleNotify,
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(CupertinoIcons.bell_circle, color: VibePalette.primary),
+                title: const Text('Invia notifica di prova'),
+                onTap: () => NotificationService.instance.sendTestNotification(),
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(CupertinoIcons.trash_circle, color: VibePalette.verificaRed),
+                title: const Text('Cancella dati salvati offline'),
+                onTap: widget.onReset,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DashedRRectPainter extends CustomPainter {
+  final Color color;
+  final double radius;
+  const _DashedRRectPainter({required this.color, required this.radius});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.3
+      ..style = PaintingStyle.stroke;
+    final path = Path()
+      ..addRRect(RRect.fromRectAndRadius(Offset.zero & size, Radius.circular(radius)));
+    for (final metric in path.computeMetrics()) {
+      for (double d = 0; d < metric.length; d += 11) {
+        canvas.drawPath(metric.extractPath(d, min(d + 6, metric.length)), paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DashedRRectPainter old) =>
+      old.color != color || old.radius != radius;
+}
+
+// === FINE FILE SCHOOL VIBE ARGO ===
