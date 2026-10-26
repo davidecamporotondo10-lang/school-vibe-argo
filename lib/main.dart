@@ -34,12 +34,37 @@ BoxDecoration cardDeco(Color card, Color border, [double radius = 24]) =>
       border: Border.all(color: border),
     );
 
+InputDecoration fieldDeco(String label, {IconData? icon, Widget? suffix}) =>
+    InputDecoration(
+      labelText: label,
+      prefixIcon: icon != null ? Icon(icon) : null,
+      suffixIcon: suffix,
+      border: const OutlineInputBorder(),
+    );
+
+Color subjectAccent(String subject) {
+  const palette = [
+    Color(0xFF3D85C6),
+    Color(0xFF635BFF),
+    Color(0xFF00C2A8),
+    Color(0xFFFF6B6B),
+    Color(0xFFFFA502),
+    Color(0xFFA855F7),
+    Color(0xFFEC4899),
+    Color(0xFF10B981),
+  ];
+  final s = subject.trim().toLowerCase();
+  if (s.isEmpty) return VibePalette.primary;
+  return palette[s.hashCode.abs() % palette.length];
+}
+
 class VibePalette {
+  static const Color capBlue = Color(0xFF3D85C6);
   static const Color primary = Color(0xFF635BFF);
   static const Color primaryGlow = Color(0xFF8B5CF6);
   static const Color verificaRed = Color(0xFFFF4757);
   static const Color interrogazioneAmber = Color(0xFFFFA502);
-  static const Color compitoBlueGreen = Color(0xFF00C2A8);
+  static const Color okGreen = Color(0xFF00C2A8);
   static const Color altroPurple = Color(0xFFA855F7);
 
   static const Color darkBg = Color(0xFF080C16);
@@ -84,37 +109,33 @@ class VibePalette {
 }
 
 // ============================================================================
-// MODELLI DATI
+// MODELLI DATI (EVENTI SENZA COMPITI, VOTI, ORARIO SCOLASTICO, ARGO)
 // ============================================================================
 
-enum EventCategory { verifica, interrogazione, compito, altro }
+enum EventCategory { verifica, interrogazione, altro }
 
 extension EventCategoryX on EventCategory {
   String get label => const {
         EventCategory.verifica: 'Verifica',
         EventCategory.interrogazione: 'Interrogazione',
-        EventCategory.compito: 'Compito',
         EventCategory.altro: 'Altro',
       }[this]!;
 
   String get chipEmoji => const {
         EventCategory.verifica: '📝',
         EventCategory.interrogazione: '🎤',
-        EventCategory.compito: '📚',
         EventCategory.altro: '✨',
       }[this]!;
 
   String get badgeDot => const {
         EventCategory.verifica: '🔴',
         EventCategory.interrogazione: '🟡',
-        EventCategory.compito: '🔵',
         EventCategory.altro: '🟣',
       }[this]!;
 
   Color get color => const {
         EventCategory.verifica: VibePalette.verificaRed,
         EventCategory.interrogazione: VibePalette.interrogazioneAmber,
-        EventCategory.compito: VibePalette.compitoBlueGreen,
         EventCategory.altro: VibePalette.altroPurple,
       }[this]!;
 
@@ -126,7 +147,7 @@ class SchoolEvent {
   final String id, title, subject, notes;
   final DateTime dateTime;
   final EventCategory category;
-  final bool highPriority, completed, fromArgo;
+  final bool highPriority, completed, fromArgo, editedByUser;
 
   const SchoolEvent({
     required this.id,
@@ -138,18 +159,30 @@ class SchoolEvent {
     this.highPriority = false,
     this.completed = false,
     this.fromArgo = false,
+    this.editedByUser = false,
   });
 
-  SchoolEvent copyWith({bool? completed}) => SchoolEvent(
+  SchoolEvent copyWith({
+    String? title,
+    String? subject,
+    String? notes,
+    DateTime? dateTime,
+    EventCategory? category,
+    bool? highPriority,
+    bool? completed,
+    bool? editedByUser,
+  }) =>
+      SchoolEvent(
         id: id,
-        title: title,
-        subject: subject,
-        notes: notes,
-        dateTime: dateTime,
-        category: category,
-        highPriority: highPriority,
+        title: title ?? this.title,
+        subject: subject ?? this.subject,
+        notes: notes ?? this.notes,
+        dateTime: dateTime ?? this.dateTime,
+        category: category ?? this.category,
+        highPriority: highPriority ?? this.highPriority,
         completed: completed ?? this.completed,
         fromArgo: fromArgo,
+        editedByUser: editedByUser ?? this.editedByUser,
       );
 
   Map<String, dynamic> toJson() => {
@@ -162,12 +195,13 @@ class SchoolEvent {
         'highPriority': highPriority,
         'completed': completed,
         'fromArgo': fromArgo,
+        'editedByUser': editedByUser,
       };
 
   factory SchoolEvent.fromJson(Map<String, dynamic> j) {
     final cat = EventCategory.values.firstWhere(
-      (e) => e.name == '${j['category'] ?? 'compito'}',
-      orElse: () => EventCategory.compito,
+      (e) => e.name == '${j['category'] ?? 'altro'}',
+      orElse: () => EventCategory.altro,
     );
     return SchoolEvent(
       id: '${j['id'] ?? ''}',
@@ -179,6 +213,7 @@ class SchoolEvent {
       highPriority: j['highPriority'] as bool? ?? cat.isHighPriorityDefault,
       completed: j['completed'] as bool? ?? false,
       fromArgo: j['fromArgo'] as bool? ?? false,
+      editedByUser: j['editedByUser'] as bool? ?? false,
     );
   }
 }
@@ -223,6 +258,64 @@ class SchoolGrade {
       );
 }
 
+class LessonSlot {
+  final String subject, time, room;
+  const LessonSlot({this.subject = '', this.time = '', this.room = ''});
+
+  LessonSlot copyWith({String? subject, String? time, String? room}) => LessonSlot(
+        subject: subject ?? this.subject,
+        time: time ?? this.time,
+        room: room ?? this.room,
+      );
+
+  Map<String, dynamic> toJson() => {'subject': subject, 'time': time, 'room': room};
+
+  factory LessonSlot.fromJson(Map<String, dynamic> j) => LessonSlot(
+        subject: '${j['subject'] ?? ''}',
+        time: '${j['time'] ?? ''}',
+        room: '${j['room'] ?? ''}',
+      );
+}
+
+class DaySchedule {
+  final List<LessonSlot> morning;
+  final List<LessonSlot> afternoon;
+
+  const DaySchedule({required this.morning, required this.afternoon});
+
+  static String defaultMorningTime(int idx) =>
+      '${(8 + idx).toString().padLeft(2, '0')}:00 - ${(9 + idx).toString().padLeft(2, '0')}:00';
+
+  static String defaultAfternoonTime(int idx) =>
+      '${(14 + idx).toString().padLeft(2, '0')}:00 - ${(15 + idx).toString().padLeft(2, '0')}:00';
+
+  factory DaySchedule.initial(int weekday) => DaySchedule(
+        morning: List.generate(
+          weekday == 6 ? 4 : 5,
+          (i) => LessonSlot(time: defaultMorningTime(i)),
+        ),
+        afternoon: const [],
+      );
+
+  Map<String, dynamic> toJson() => {
+        'morning': morning.map((e) => e.toJson()).toList(),
+        'afternoon': afternoon.map((e) => e.toJson()).toList(),
+      };
+
+  factory DaySchedule.fromJson(Map<String, dynamic> j, int weekday) {
+    final m = (j['morning'] as List?)
+        ?.map((x) => LessonSlot.fromJson(x as Map<String, dynamic>))
+        .toList();
+    final a = (j['afternoon'] as List?)
+        ?.map((x) => LessonSlot.fromJson(x as Map<String, dynamic>))
+        .toList();
+    return DaySchedule(
+      morning: m ?? DaySchedule.initial(weekday).morning,
+      afternoon: a ?? const [],
+    );
+  }
+}
+
 class ArgoCredentials {
   final String schoolCode, username, password, studentName;
   final DateTime? lastSync;
@@ -243,6 +336,8 @@ class ArgoCredentials {
 class StorageService {
   static const _kEvents = 'sv_events_v1';
   static const _kGrades = 'sv_grades_v1';
+  static const _kTimetable = 'sv_timetable_v1';
+  static const _kDeletedArgo = 'sv_deleted_argo_v1';
   static const _kDark = 'sv_dark_v1';
   static const _kNotify = 'sv_notify_v1';
   static const _kSchool = 'sv_argo_school';
@@ -263,13 +358,28 @@ class StorageService {
   bool loadNotifyEnabled() => _p.getBool(_kNotify) ?? true;
   Future<void> saveNotifyEnabled(bool v) => _p.setBool(_kNotify, v);
 
+  Set<String> loadDeletedArgoIds() => (_p.getStringList(_kDeletedArgo) ?? const []).toSet();
+  Future<void> saveDeletedArgoIds(Set<String> ids) =>
+      _p.setStringList(_kDeletedArgo, ids.toList());
+
   List<SchoolEvent> loadEvents() {
     final raw = _p.getString(_kEvents);
     if (raw == null || raw.isEmpty) return [];
     try {
-      return (jsonDecode(raw) as List)
-          .map((e) => SchoolEvent.fromJson(e as Map<String, dynamic>))
-          .toList();
+      final list = <SchoolEvent>[];
+      for (final item in (jsonDecode(raw) as List)) {
+        if (item is! Map<String, dynamic>) continue;
+        final id = '${item['id'] ?? ''}';
+        // Ignora e ripulisce qualsiasi vecchio compito salvato in precedenza
+        if (item['category'] == 'compito' ||
+            id.startsWith('argo_c_') ||
+            id.startsWith('sn_c_') ||
+            id == 'demo_3') {
+          continue;
+        }
+        list.add(SchoolEvent.fromJson(item));
+      }
+      return list;
     } catch (_) {
       return [];
     }
@@ -293,6 +403,25 @@ class StorageService {
   Future<void> saveGrades(List<SchoolGrade> list) =>
       _p.setString(_kGrades, jsonEncode(list.map((g) => g.toJson()).toList()));
 
+  Map<int, DaySchedule> loadTimetable() {
+    final raw = _p.getString(_kTimetable);
+    final out = {for (int d = 1; d <= 6; d++) d: DaySchedule.initial(d)};
+    if (raw == null || raw.isEmpty) return out;
+    try {
+      final map = jsonDecode(raw) as Map<String, dynamic>;
+      for (int d = 1; d <= 6; d++) {
+        final v = map['$d'];
+        if (v is Map<String, dynamic>) out[d] = DaySchedule.fromJson(v, d);
+      }
+    } catch (_) {}
+    return out;
+  }
+
+  Future<void> saveTimetable(Map<int, DaySchedule> map) => _p.setString(
+        _kTimetable,
+        jsonEncode({for (final e in map.entries) '${e.key}': e.value.toJson()}),
+      );
+
   ArgoCredentials loadArgo() {
     final s = _p.getString(_kSync);
     return ArgoCredentials(
@@ -313,7 +442,7 @@ class StorageService {
   }
 
   Future<void> clearAll() async {
-    for (final k in [_kEvents, _kGrades, _kStudent, _kSync]) {
+    for (final k in [_kEvents, _kGrades, _kDeletedArgo, _kStudent, _kSync]) {
       await _p.remove(k);
     }
   }
@@ -345,9 +474,9 @@ class NotificationService {
 
   NotificationDetails _details() => const NotificationDetails(
         android: AndroidNotificationDetails(
-          'school_vibe_channel',
-          'Promemoria Verifiche & Scadenze',
-          channelDescription: 'Avvisi automatici per verifiche, interrogazioni e compiti',
+          'calendario_scuola_channel',
+          'Promemoria Verifiche & Interrogazioni',
+          channelDescription: 'Avvisi automatici per verifiche e interrogazioni',
           importance: Importance.max,
           priority: Priority.high,
         ),
@@ -357,7 +486,7 @@ class NotificationService {
     if (!_ready) await init();
     await _plugin.show(
       999001,
-      '✨ School Vibe · Notifiche Attive!',
+      '🎓 Calendario Scuola · Notifiche Attive!',
       'Ti avviseremo il giorno prima (17:00) e la mattina stessa (07:15) delle tue prove.',
       _details(),
     );
@@ -382,7 +511,7 @@ class NotificationService {
         await _schedule(
           baseId,
           '${ev.category.badgeDot} Domani: ${ev.category.label} di ${ev.subject}',
-          '${ev.title} — Ultimo ripasso pomeridiano, spacca tutto! 💪',
+          '${ev.title} — Ultimo ripasso pomeridiano! 💪',
           dayBefore,
         );
       }
@@ -390,7 +519,7 @@ class NotificationService {
         await _schedule(
           baseId + 1,
           '🔥 Oggi hai ${ev.category.label} di ${ev.subject}!',
-          '${ev.title} — Respira profondo, sei pronto! 🍀',
+          '${ev.title} — In bocca al lupo! 🍀',
           morningOf,
         );
       }
@@ -413,14 +542,21 @@ class NotificationService {
 }
 
 // ============================================================================
-// INTEGRAZIONE REGISTRO ELETTRONICO ARGO (DidUP 1.30.2+ OAuth2 PKCE + ScuolaNext)
+// INTEGRAZIONE REGISTRO ELETTRONICO ARGO (DidUP 1.30.2+ OAuth2 PKCE)
 // ============================================================================
 
 class ArgoSyncResult {
   final List<SchoolEvent> events;
   final List<SchoolGrade> grades;
   final String studentName;
-  const ArgoSyncResult({required this.events, required this.grades, required this.studentName});
+  final List<String> subjects;
+
+  const ArgoSyncResult({
+    required this.events,
+    required this.grades,
+    required this.studentName,
+    this.subjects = const [],
+  });
 }
 
 class ArgoApiService {
@@ -428,7 +564,6 @@ class ArgoApiService {
   static const _redirectUri = 'it.argosoft.didup.famiglia.new://login-callback';
   static const _defaultAppVersion = '1.30.2';
   static const _dataInizioDefault = '2000-01-01 00:00:00.000';
-  static const _scuolaNextBase = 'https://www.portaleargo.it/famiglia/api/rest';
   static const _ua =
       'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Mobile Safari/537.36';
 
@@ -473,11 +608,7 @@ class ArgoApiService {
       if (eq > 0) {
         final k = pair.substring(0, eq).trim();
         final v = pair.substring(eq + 1).trim();
-        if (v.isEmpty) {
-          jar.remove(k);
-        } else {
-          jar[k] = v;
-        }
+        v.isEmpty ? jar.remove(k) : jar[k] = v;
       }
     }
   }
@@ -504,19 +635,8 @@ class ArgoApiService {
     required String schoolCode,
     required String username,
     required String password,
-  }) async {
-    final code = schoolCode.trim().toUpperCase();
-    final user = username.trim();
-    try {
-      return await _syncDidUp(code, user, password);
-    } catch (didUpErr) {
-      try {
-        return await _syncScuolaNext(code, user, password);
-      } catch (_) {
-        throw Exception('$didUpErr');
-      }
-    }
-  }
+  }) =>
+      _syncDidUp(schoolCode.trim().toUpperCase(), username.trim(), password);
 
   static Future<ArgoSyncResult> _syncDidUp(String school, String user, String pass) async {
     final appVersion = await _resolveClientVersion();
@@ -566,7 +686,6 @@ class ArgoApiService {
     }
 
     try {
-      // 1) Richiesta iniziale OAuth2 -> cookie + login_challenge
       final r0 = await passo('GET', authUri);
       _collectCookies(r0, cookies);
       final loc0 = r0.headers.value(HttpHeaders.locationHeader);
@@ -576,7 +695,6 @@ class ArgoApiService {
         throw 'Parametro login_challenge non ricevuto da Argo.';
       }
 
-      // 2) Invio credenziali SSO Argo (senza cookie, con prefill=false)
       final ssoUri = Uri.parse('https://www.portaleargo.it/auth/sso/login');
       final body = [
         'challenge=${Uri.encodeQueryComponent(loginChallenge)}',
@@ -594,13 +712,12 @@ class ArgoApiService {
         throw 'Credenziali errate: verifica Codice Scuola ($school), Nome Utente e Password.';
       }
 
-      // 3) Catena redirect OAuth con invio cookie solo su auth.portaleargo.it
       final url1 = ssoUri.resolve(loc1);
       final r2 = await passo('GET', url1, sendCookies: true);
       _collectCookies(r2, cookies);
       final loc2 = r2.headers.value(HttpHeaders.locationHeader);
       if (loc2 == null) {
-        throw 'Login SSO interrotto: controlla le credenziali o se Argo richiede un cambio password.';
+        throw 'Login SSO interrotto: controlla le credenziali o eventuale cambio password su Argo.';
       }
 
       String callbackUrl;
@@ -630,7 +747,6 @@ class ArgoApiService {
         throw 'Autorizzazione Argo rifiutata ($err).';
       }
 
-      // 4) Scambio codice -> Bearer token
       final tokRes = await http
           .post(
             Uri.parse('https://auth.portaleargo.it/oauth2/token'),
@@ -665,7 +781,6 @@ class ArgoApiService {
             if (codMin != null) 'x-cod-min': codMin,
           };
 
-      // 5) Login API DidUP AppFamiglia
       final loginRes = await http
           .post(
             Uri.parse('https://www.portaleargo.it/appfamiglia/api/rest/login'),
@@ -702,7 +817,6 @@ class ArgoApiService {
           if (o is Map<String, dynamic> && o['chiave'] != null) '${o['chiave']}': o['valore'],
       };
 
-      // 6) Profilo alunno
       String studentName = user;
       try {
         final pRes = await http
@@ -716,7 +830,6 @@ class ArgoApiService {
         }
       } catch (_) {}
 
-      // 7) Dashboard completa (compiti, promemoria/verifiche, voti)
       final dashRes = await http
           .post(
             Uri.parse('https://www.portaleargo.it/appfamiglia/api/rest/dashboard/dashboard'),
@@ -730,7 +843,7 @@ class ArgoApiService {
 
       final dashRoot = jsonDecode(dashRes.body) as Map<String, dynamic>;
       if (dashRoot['success'] == false) {
-        throw '${dashRoot['msg'] ?? 'Errore scaricamento bacheca/dashboard Argo'}';
+        throw '${dashRoot['msg'] ?? 'Errore scaricamento dashboard Argo'}';
       }
       final datiList =
           (dashRoot['data'] is Map<String, dynamic>) ? ((dashRoot['data']['dati'] as List?) ?? []) : [];
@@ -758,6 +871,7 @@ class ArgoApiService {
       final events = <SchoolEvent>[];
       final grades = <SchoolGrade>[];
 
+      // Scarica esclusivamente promemoria/verifiche/interrogazioni (nessun compito!)
       for (final m in _applyArgoOps(dash['promemoria'] as List?)) {
         final txt = '${m['desAnnotazioni'] ?? ''}'.trim();
         if (txt.isEmpty) continue;
@@ -765,7 +879,7 @@ class ArgoApiService {
         final docName = '${m['docente'] ?? ''}'.trim();
         final subj =
             docMateria['${m['pkDocente'] ?? ''}'] ?? (docName.isNotEmpty ? docName : 'Promemoria');
-        final cat = classifyText(txt, EventCategory.verifica);
+        final cat = classifyText(txt);
         events.add(SchoolEvent(
           id: 'argo_p_${m['pk'] ?? txt.hashCode}',
           title: txt,
@@ -776,29 +890,6 @@ class ArgoApiService {
           highPriority: cat.isHighPriorityDefault,
           fromArgo: true,
         ));
-      }
-
-      for (final m in _applyArgoOps(dash['registro'] as List?)) {
-        final subj = _cleanSubj('${m['materia'] ?? 'Materia'}');
-        final docName = '${m['docente'] ?? ''}'.trim();
-        for (final c in (m['compiti'] as List? ?? [])) {
-          if (c is! Map<String, dynamic>) continue;
-          final txt = '${c['compito'] ?? ''}'.trim();
-          if (txt.isEmpty) continue;
-          final due = '${c['dataConsegna'] ?? ''}'.trim();
-          final d = DateTime.tryParse(due.isNotEmpty ? due : '${m['datGiorno'] ?? ''}') ?? DateTime.now();
-          final cat = classifyText(txt, EventCategory.compito);
-          events.add(SchoolEvent(
-            id: 'argo_c_${subj}_${d.toIso8601String()}_${txt.hashCode}',
-            title: txt,
-            subject: subj,
-            notes: docName,
-            dateTime: DateTime(d.year, d.month, d.day, 8, 0),
-            category: cat,
-            highPriority: cat.isHighPriorityDefault,
-            fromArgo: true,
-          ));
-        }
       }
 
       for (final m in _applyArgoOps(dash['voti'] as List?)) {
@@ -818,103 +909,24 @@ class ArgoApiService {
         ));
       }
 
-      return ArgoSyncResult(events: events, grades: grades, studentName: studentName);
+      return ArgoSyncResult(
+        events: events,
+        grades: grades,
+        studentName: studentName,
+        subjects: matByPk.values.toSet().toList(),
+      );
     } finally {
       client.close(force: true);
     }
   }
 
-  static Future<ArgoSyncResult> _syncScuolaNext(String school, String user, String pass) async {
-    const baseHdr = {
-      'x-version': '2.1.0',
-      'x-key-app': 'ax6542sdru3217t4eesd9',
-      'x-produttore-software': 'ARGO Software s.r.l. - Ragusa',
-      'x-app-code': 'APF',
-      'X-Requested-With': 'XMLHttpRequest',
-    };
-    final lRes = await http
-        .get(Uri.parse('$_scuolaNextBase/login?_dc=${DateTime.now().millisecondsSinceEpoch}'),
-            headers: {...baseHdr, 'x-cod-min': school, 'x-user-id': user, 'x-pwd': pass})
-        .timeout(const Duration(seconds: 15));
-    final token = (jsonDecode(lRes.body) as Map<String, dynamic>)['token'] as String;
-    final sRes = await http.get(
-      Uri.parse('$_scuolaNextBase/schede?_dc=${DateTime.now().millisecondsSinceEpoch}'),
-      headers: {...baseHdr, 'x-auth-token': token, 'x-cod-min': school},
-    );
-    final scheda = (jsonDecode(sRes.body) as List).first as Map<String, dynamic>;
-    final hdr = {
-      ...baseHdr,
-      'x-auth-token': token,
-      'x-cod-min': school,
-      'x-prg-scheda': '${scheda['prgScheda']}',
-      'x-prg-scuola': '${scheda['prgScuola']}',
-      'x-prg-alunno': '${scheda['prgAlunno']}',
-      'x-max-return-record': '100',
-    };
-
-    final compRes = await http.get(Uri.parse('$_scuolaNextBase/compiti?page=1&start=0&limit=80'), headers: hdr);
-    final promRes = await http.get(Uri.parse('$_scuolaNextBase/promemoria?page=1&start=0&limit=80'), headers: hdr);
-    final votiRes =
-        await http.get(Uri.parse('$_scuolaNextBase/votigiornalieri?page=1&start=0&limit=100'), headers: hdr);
-
-    final events = <SchoolEvent>[];
-    final grades = <SchoolGrade>[];
-
-    for (final raw in (jsonDecode(compRes.body)['dati'] as List? ?? [])) {
-      final m = raw as Map<String, dynamic>;
-      final txt = '${m['desCompiti'] ?? ''}'.trim();
-      if (txt.isEmpty) continue;
-      final d = DateTime.tryParse('${m['datCompiti'] ?? m['datGiorno'] ?? ''}') ?? DateTime.now();
-      final cat = classifyText(txt, EventCategory.compito);
-      events.add(SchoolEvent(
-        id: 'sn_c_${txt.hashCode}_${d.millisecondsSinceEpoch}',
-        title: txt,
-        subject: _cleanSubj('${m['desMateria'] ?? 'Materia'}'),
-        dateTime: DateTime(d.year, d.month, d.day, 8, 0),
-        category: cat,
-        highPriority: cat.isHighPriorityDefault,
-        fromArgo: true,
-      ));
-    }
-    for (final raw in (jsonDecode(promRes.body)['dati'] as List? ?? [])) {
-      final m = raw as Map<String, dynamic>;
-      final txt = '${m['desAnnotazioni'] ?? ''}'.trim();
-      if (txt.isEmpty) continue;
-      final d = DateTime.tryParse('${m['datGiorno'] ?? ''}') ?? DateTime.now();
-      final cat = classifyText(txt, EventCategory.verifica);
-      events.add(SchoolEvent(
-        id: 'sn_p_${txt.hashCode}_${d.millisecondsSinceEpoch}',
-        title: txt,
-        subject: '${m['desMittente'] ?? 'Docente'}',
-        dateTime: DateTime(d.year, d.month, d.day, 8, 15),
-        category: cat,
-        highPriority: cat.isHighPriorityDefault,
-        fromArgo: true,
-      ));
-    }
-    for (final raw in (jsonDecode(votiRes.body)['dati'] as List? ?? [])) {
-      final m = raw as Map<String, dynamic>;
-      final val = double.tryParse('${m['decValore']}');
-      if (val == null || val <= 0) continue;
-      grades.add(SchoolGrade(
-        id: 'sn_v_${m.hashCode}',
-        subject: _cleanSubj('${m['desMateria'] ?? 'Materia'}'),
-        value: val,
-        type: m['codVotoPratico'] == 'N' ? 'Orale' : 'Scritto',
-        description: '${m['desProva'] ?? m['desCommento'] ?? ''}',
-        date: DateTime.tryParse('${m['datGiorno'] ?? ''}') ?? DateTime.now(),
-        fromArgo: true,
-      ));
-    }
-    return ArgoSyncResult(events: events, grades: grades, studentName: user);
-  }
-
-  static EventCategory classifyText(String text, EventCategory fallback) {
+  static EventCategory classifyText(String text) {
     final l = text.toLowerCase();
     if (l.contains('verifica') ||
         l.contains('compito in classe') ||
         l.contains('simulazione') ||
-        l.contains('prova scritta')) {
+        l.contains('prova') ||
+        l.contains('test')) {
       return EventCategory.verifica;
     }
     if (l.contains('interrogazion') ||
@@ -923,7 +935,7 @@ class ArgoApiService {
         l.contains('esposizione')) {
       return EventCategory.interrogazione;
     }
-    return fallback;
+    return EventCategory.altro;
   }
 
   static String _cleanSubj(String s) =>
@@ -945,7 +957,7 @@ class ArgoApiService {
           id: 'demo_1',
           title: 'Verifica scritta su limiti, continuità e asintoti',
           subject: 'Matematica',
-          notes: 'Cap. 12-13 + esercizi guida sul quaderno.',
+          notes: 'Cap. 12-13 + formulario.',
           dateTime: d(2, 8),
           category: EventCategory.verifica,
           highPriority: true,
@@ -959,14 +971,6 @@ class ArgoApiService {
           dateTime: d(4, 9),
           category: EventCategory.interrogazione,
           highPriority: true,
-          fromArgo: true,
-        ),
-        SchoolEvent(
-          id: 'demo_3',
-          title: 'Circuiti RC e leggi di Kirchhoff pag. 214 n. 15-19',
-          subject: 'Fisica',
-          dateTime: d(1, 8),
-          category: EventCategory.compito,
           fromArgo: true,
         ),
         SchoolEvent(
@@ -1034,7 +1038,7 @@ class ArgoApiService {
 }
 
 // ============================================================================
-// APP ROOT & HOME SHELL
+// APP ROOT & HOME SHELL (4 SEZIONI: CALENDARIO, ORARIO, VOTI, ARGO)
 // ============================================================================
 
 class SchoolVibeApp extends StatefulWidget {
@@ -1056,7 +1060,7 @@ class _SchoolVibeAppState extends State<SchoolVibeApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'school-vibe-argo',
+      title: 'Calendario Scuola',
       debugShowCheckedModeBanner: false,
       theme: VibePalette.lightTheme(),
       darkTheme: VibePalette.darkTheme(),
@@ -1090,12 +1094,6 @@ class HomeShell extends StatefulWidget {
 }
 
 class _HomeShellState extends State<HomeShell> {
-  static const _vibeQuotes = [
-    '🎉 Il futuro te ringrazierà per lo studio di oggi 🙏',
-    '🚀 Un passo alla volta: spaccherai anche questa settimana!',
-    '🧠 Costanza > perfezione. Anche 30 minuti oggi fanno la svolta!',
-    '🌟 Ogni pagina ripassata oggi è ansia in meno domani!',
-  ];
   static const _chillEmptyQuotes = [
     'Agenda vuota, mente leggera. Che pace! 🧘',
     'Zero scadenze in vista: goditi il meritato relax! 🌴',
@@ -1103,9 +1101,21 @@ class _HomeShellState extends State<HomeShell> {
     'Nessun impegno segnato: giornata libera! ✨',
   ];
 
+  static const _dayNames = {
+    1: 'Lunedì',
+    2: 'Martedì',
+    3: 'Mercoledì',
+    4: 'Giovedì',
+    5: 'Venerdì',
+    6: 'Sabato',
+  };
+  static const _dayShort = {1: 'Lun', 2: 'Mar', 3: 'Mer', 4: 'Gio', 5: 'Ven', 6: 'Sab'};
+
   int _tab = 0;
   late List<SchoolEvent> _events = widget.storage.loadEvents();
   late List<SchoolGrade> _grades = widget.storage.loadGrades();
+  late Map<int, DaySchedule> _timetable = widget.storage.loadTimetable();
+  late Set<String> _deletedArgoIds = widget.storage.loadDeletedArgoIds();
   late ArgoCredentials _argo = widget.storage.loadArgo();
   late bool _notifyOn = widget.storage.loadNotifyEnabled();
 
@@ -1114,8 +1124,11 @@ class _HomeShellState extends State<HomeShell> {
   CalendarFormat _calFormat = CalendarFormat.month;
   DateTime _focusedDay = DateTime.now();
   DateTime _selectedDay = DateTime.now();
-  int _quoteIdx = Random().nextInt(_vibeQuotes.length);
   int _emptyIdx = Random().nextInt(_chillEmptyQuotes.length);
+
+  int _ttDay = DateTime.now().weekday.clamp(1, 6);
+  bool _ttWeekOverview = false;
+
   bool _syncing = false;
   String? _lastSyncError;
   bool _weightedAvg = true;
@@ -1147,6 +1160,34 @@ class _HomeShellState extends State<HomeShell> {
     await widget.storage.saveGrades(_grades);
   }
 
+  Future<void> _saveTimetable() => widget.storage.saveTimetable(_timetable);
+
+  List<String> get _knownSubjects {
+    final s = <String>{
+      for (final g in _grades)
+        if (g.subject.trim().isNotEmpty) g.subject.trim(),
+      for (final e in _events)
+        if (e.subject.trim().isNotEmpty && e.subject != 'Promemoria') e.subject.trim(),
+      for (final d in _timetable.values) ...[
+        for (final m in d.morning)
+          if (m.subject.trim().isNotEmpty) m.subject.trim(),
+        for (final a in d.afternoon)
+          if (a.subject.trim().isNotEmpty) a.subject.trim(),
+      ],
+      'Matematica',
+      'Italiano',
+      'Inglese',
+      'Storia',
+      'Fisica',
+      'Scienze',
+      'Informatica',
+      'Filosofia',
+      'Arte',
+      'Scienze motorie',
+    };
+    return s.toList()..sort();
+  }
+
   List<SchoolEvent> _eventsForDay(DateTime day) => _events
       .where((e) => isSameDay(e.dateTime, day) && (_catFilter == null || e.category == _catFilter))
       .toList();
@@ -1174,6 +1215,15 @@ class _HomeShellState extends State<HomeShell> {
   int get _highPrioTotal =>
       _events.where((e) => !e.completed && (e.highPriority || e.category.isHighPriorityDefault)).length;
 
+  Future<void> _deleteEvent(SchoolEvent ev) async {
+    setState(() => _events.removeWhere((x) => x.id == ev.id));
+    if (ev.fromArgo) {
+      _deletedArgoIds.add(ev.id);
+      await widget.storage.saveDeletedArgoIds(_deletedArgoIds);
+    }
+    await _saveEvents();
+  }
+
   Future<void> _runArgoSync(String school, String user, String pass, {bool demo = false}) async {
     setState(() {
       _syncing = true;
@@ -1190,8 +1240,32 @@ class _HomeShellState extends State<HomeShell> {
         studentName: res.studentName,
         lastSync: DateTime.now(),
       );
+
+      // Mantiene eventuali modifiche o completamenti fatti dall'utente sugli eventi di Argo
+      final existingById = {for (final e in _events) e.id: e};
+      final mergedArgo = <SchoolEvent>[];
+      for (final inc in res.events) {
+        if (_deletedArgoIds.contains(inc.id)) continue;
+        final prev = existingById[inc.id];
+        if (prev != null && prev.editedByUser) {
+          mergedArgo.add(prev);
+        } else if (prev != null) {
+          mergedArgo.add(inc.copyWith(completed: prev.completed));
+        } else {
+          mergedArgo.add(inc);
+        }
+      }
+      for (final prev in _events) {
+        if (prev.fromArgo &&
+            prev.editedByUser &&
+            !_deletedArgoIds.contains(prev.id) &&
+            !mergedArgo.any((x) => x.id == prev.id)) {
+          mergedArgo.add(prev);
+        }
+      }
+
       setState(() {
-        _events = [..._events.where((e) => !e.fromArgo), ...res.events];
+        _events = [..._events.where((e) => !e.fromArgo), ...mergedArgo];
         _grades = [..._grades.where((g) => !g.fromArgo), ...res.grades];
         _argo = creds;
       });
@@ -1202,7 +1276,7 @@ class _HomeShellState extends State<HomeShell> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               content:
-                  Text('✅ Sincronizzati ${res.events.length} impegni e ${res.grades.length} voti!')),
+                  Text('✅ Sincronizzati ${mergedArgo.length} impegni e ${res.grades.length} voti!')),
         );
       }
     } catch (e) {
@@ -1232,6 +1306,7 @@ class _HomeShellState extends State<HomeShell> {
                 index: _tab,
                 children: [
                   _buildDashboardTab(d, card, border),
+                  _buildTimetableTab(d, card, border),
                   _buildGradesTab(d, card, border),
                   _ArgoSettingsTab(
                     isDark: d,
@@ -1254,6 +1329,7 @@ class _HomeShellState extends State<HomeShell> {
                       setState(() {
                         _events = [];
                         _grades = [];
+                        _deletedArgoIds = {};
                         _argo = const ArgoCredentials();
                         _lastSyncError = null;
                       });
@@ -1265,9 +1341,8 @@ class _HomeShellState extends State<HomeShell> {
           ],
         ),
       ),
-      floatingActionButton: _tab == 2
-          ? null
-          : Container(
+      floatingActionButton: (_tab == 0 || _tab == 2)
+          ? Container(
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 gradient:
@@ -1284,10 +1359,11 @@ class _HomeShellState extends State<HomeShell> {
                 backgroundColor: Colors.transparent,
                 foregroundColor: Colors.white,
                 onPressed: () =>
-                    _tab == 0 ? _showAddEventModal(_selectedDay) : _showAddGradeModal(),
+                    _tab == 0 ? _showEventModal(baseDate: _selectedDay) : _showAddGradeModal(),
                 child: const Icon(CupertinoIcons.add, size: 28),
               ),
-            ),
+            )
+          : null,
       bottomNavigationBar: Container(
         decoration: BoxDecoration(color: card, border: Border(top: BorderSide(color: border))),
         child: NavigationBar(
@@ -1303,14 +1379,19 @@ class _HomeShellState extends State<HomeShell> {
               label: 'Calendario',
             ),
             NavigationDestination(
+              icon: Icon(CupertinoIcons.clock),
+              selectedIcon: Icon(CupertinoIcons.clock_fill, color: VibePalette.primary),
+              label: 'Orario',
+            ),
+            NavigationDestination(
               icon: Icon(CupertinoIcons.chart_bar_square),
               selectedIcon: Icon(CupertinoIcons.chart_bar_square_fill, color: VibePalette.primary),
-              label: 'Voti & Medie',
+              label: 'Voti',
             ),
             NavigationDestination(
               icon: Icon(CupertinoIcons.cloud_download),
               selectedIcon: Icon(CupertinoIcons.cloud_download_fill, color: VibePalette.primary),
-              label: 'Argo & Sync',
+              label: 'Argo',
             ),
           ],
         ),
@@ -1329,16 +1410,17 @@ class _HomeShellState extends State<HomeShell> {
             width: 46,
             height: 46,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(15),
-              gradient: const LinearGradient(colors: [VibePalette.primary, VibePalette.primaryGlow]),
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: alphaCol(VibePalette.capBlue, 0.35)),
               boxShadow: [
                 BoxShadow(
-                    color: alphaCol(VibePalette.primary, 0.42),
-                    blurRadius: 14,
+                    color: alphaCol(VibePalette.capBlue, 0.28),
+                    blurRadius: 12,
                     offset: const Offset(0, 4)),
               ],
             ),
-            child: const Icon(CupertinoIcons.sparkles, color: Colors.white, size: 23),
+            child: const Icon(Icons.school_rounded, color: VibePalette.capBlue, size: 27),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -1347,27 +1429,32 @@ class _HomeShellState extends State<HomeShell> {
               children: [
                 Row(
                   children: [
-                    Text('School Vibe',
-                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: txt)),
+                    Flexible(
+                      child: Text('Calendario Scuola',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: txt)),
+                    ),
                     if (_argo.lastSync != null) ...[
-                      const SizedBox(width: 7),
+                      const SizedBox(width: 6),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: alphaCol(VibePalette.compitoBlueGreen, 0.16),
+                          color: alphaCol(VibePalette.okGreen, 0.16),
                           borderRadius: BorderRadius.circular(7),
                         ),
                         child: const Text('ARGO',
                             style: TextStyle(
                                 fontSize: 9.5,
                                 fontWeight: FontWeight.w900,
-                                color: VibePalette.compitoBlueGreen)),
+                                color: VibePalette.okGreen)),
                       ),
                     ],
                   ],
                 ),
                 Text(
-                  _argo.studentName.isNotEmpty ? _argo.studentName : 'il tuo calendario scolastico',
+                  _argo.studentName.isNotEmpty
+                      ? _argo.studentName
+                      : 'verifiche, orario e registro',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 12.5, color: muted),
@@ -1402,7 +1489,7 @@ class _HomeShellState extends State<HomeShell> {
       );
 
   // --------------------------------------------------------------------------
-  // TAB 1: DASHBOARD CALENDARIO (CON SCROLL VERTICALE FLUIDO SBLOCCATO)
+  // TAB 1: CALENDARIO & SCADENZE (SENZA COMPITI E SENZA FRASI MOTIVAZIONALI)
   // --------------------------------------------------------------------------
 
   Widget _buildDashboardTab(bool d, Color card, Color border) {
@@ -1433,24 +1520,6 @@ class _HomeShellState extends State<HomeShell> {
                 child: _kpiBox(CupertinoIcons.flame_fill, const [Color(0xFFFF5E3A), Color(0xFFFF2A68)],
                     _highPrioTotal, 'Alta priorità', card, border, txt, muted)),
           ],
-        ),
-        const SizedBox(height: 15),
-        GestureDetector(
-          onTap: () => setState(() => _quoteIdx = (_quoteIdx + 1) % _vibeQuotes.length),
-          child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 260),
-            child: Align(
-              key: ValueKey(_quoteIdx),
-              alignment: Alignment.centerLeft,
-              child: Text(
-                _vibeQuotes[_quoteIdx],
-                style: TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w600,
-                    color: d ? const Color(0xFFCBD5E1) : const Color(0xFF334155)),
-              ),
-            ),
-          ),
         ),
         const SizedBox(height: 15),
         Align(
@@ -1604,7 +1673,7 @@ class _HomeShellState extends State<HomeShell> {
                 Divider(color: border, height: 1),
                 const SizedBox(height: 12),
                 Wrap(
-                  spacing: 16,
+                  spacing: 18,
                   runSpacing: 8,
                   children: EventCategory.values
                       .map((c) => Row(
@@ -1639,7 +1708,7 @@ class _HomeShellState extends State<HomeShell> {
                             style: TextStyle(fontSize: 17.5, fontWeight: FontWeight.w800, color: txt))),
                     InkWell(
                       borderRadius: BorderRadius.circular(20),
-                      onTap: () => _showAddEventModal(_selectedDay),
+                      onTap: () => _showEventModal(baseDate: _selectedDay),
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
                         decoration: BoxDecoration(
@@ -1720,7 +1789,7 @@ class _HomeShellState extends State<HomeShell> {
         onTap: onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(horizontal: 17, vertical: 9),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(24),
             gradient: active
@@ -1814,7 +1883,7 @@ class _HomeShellState extends State<HomeShell> {
                     children: [
                       const Text('🎉', style: TextStyle(fontSize: 40)),
                       const SizedBox(height: 8),
-                      Text('Nessuna scadenza in programma! Rilassati o sincronizza Argo.',
+                      Text('Nessuna verifica o interrogazione in programma!',
                           textAlign: TextAlign.center, style: TextStyle(color: muted)),
                     ],
                   ),
@@ -1840,7 +1909,7 @@ class _HomeShellState extends State<HomeShell> {
 
   String _countdownText(DateTime dt) {
     final diff = dt.difference(DateTime.now());
-    if (diff.isNegative) return isSameDay(dt, DateTime.now()) ? 'Oggi' : 'Scaduto';
+    if (diff.isNegative) return isSameDay(dt, DateTime.now()) ? 'Oggi' : 'Passato';
     if (diff.inDays >= 1) return 'Tra ${diff.inDays}g ${diff.inHours % 24}h';
     if (diff.inHours >= 1) return 'Tra ${diff.inHours}h ${diff.inMinutes % 60}m';
     return 'Tra ${max(1, diff.inMinutes)}m';
@@ -1848,100 +1917,690 @@ class _HomeShellState extends State<HomeShell> {
 
   Widget _eventCardTile(SchoolEvent ev, bool d, Color border, Color txt, Color muted) {
     final c = ev.category.color;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(13),
-      decoration: BoxDecoration(
-        color: d ? VibePalette.darkCardAlt : VibePalette.lightCardAlt,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: ev.completed ? border : alphaCol(c, 0.45)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          GestureDetector(
-            onTap: () async {
-              final i = _events.indexWhere((x) => x.id == ev.id);
-              if (i != -1) {
-                setState(() => _events[i] = _events[i].copyWith(completed: !ev.completed));
-                await _saveEvents();
-              }
-            },
-            child: Container(
-              width: 24,
-              height: 24,
-              margin: const EdgeInsets.only(top: 2),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: ev.completed ? VibePalette.compitoBlueGreen : alphaCol(c, 0.15),
-                border: Border.all(color: ev.completed ? VibePalette.compitoBlueGreen : c, width: 2),
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: () => _showEventModal(existing: ev),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(13),
+        decoration: BoxDecoration(
+          color: d ? VibePalette.darkCardAlt : VibePalette.lightCardAlt,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: ev.completed ? border : alphaCol(c, 0.45)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            GestureDetector(
+              onTap: () async {
+                final i = _events.indexWhere((x) => x.id == ev.id);
+                if (i != -1) {
+                  setState(() => _events[i] = _events[i].copyWith(completed: !ev.completed));
+                  await _saveEvents();
+                }
+              },
+              child: Container(
+                width: 24,
+                height: 24,
+                margin: const EdgeInsets.only(top: 2),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: ev.completed ? VibePalette.okGreen : alphaCol(c, 0.15),
+                  border: Border.all(color: ev.completed ? VibePalette.okGreen : c, width: 2),
+                ),
+                child: ev.completed ? const Icon(Icons.check, size: 15, color: Colors.white) : null,
               ),
-              child: ev.completed ? const Icon(Icons.check, size: 15, color: Colors.white) : null,
             ),
-          ),
-          const SizedBox(width: 11),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 5,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                      decoration:
-                          BoxDecoration(color: alphaCol(c, 0.18), borderRadius: BorderRadius.circular(7)),
-                      child: Text('${ev.category.badgeDot} ${ev.category.label}',
-                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: c)),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                      decoration: BoxDecoration(
-                          color: alphaCol(VibePalette.primary, 0.16), borderRadius: BorderRadius.circular(7)),
-                      child: Text(ev.subject,
-                          style: const TextStyle(
-                              fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF818CF8))),
-                    ),
-                    if (!ev.completed)
-                      Text('⏱ ${_countdownText(ev.dateTime)}',
-                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: txt)),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  ev.title,
-                  style: TextStyle(
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w700,
-                    color: ev.completed ? muted : txt,
-                    decoration: ev.completed ? TextDecoration.lineThrough : null,
+            const SizedBox(width: 11),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 5,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration:
+                            BoxDecoration(color: alphaCol(c, 0.18), borderRadius: BorderRadius.circular(7)),
+                        child: Text('${ev.category.badgeDot} ${ev.category.label}',
+                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: c)),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                            color: alphaCol(VibePalette.primary, 0.16),
+                            borderRadius: BorderRadius.circular(7)),
+                        child: Text(ev.subject,
+                            style: const TextStyle(
+                                fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF818CF8))),
+                      ),
+                      if (!ev.completed)
+                        Text('⏱ ${_countdownText(ev.dateTime)}',
+                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: txt)),
+                    ],
                   ),
-                ),
-                if (ev.notes.isNotEmpty) Text(ev.notes, style: TextStyle(fontSize: 12, color: muted)),
-                const SizedBox(height: 4),
-                Text(
-                  '${DateFormat('EEE d MMM · HH:mm', 'it_IT').format(ev.dateTime)}${ev.fromArgo ? ' · Sincronizzato da Argo' : ''}',
-                  style: TextStyle(fontSize: 11, color: muted),
-                ),
-              ],
+                  const SizedBox(height: 6),
+                  Text(
+                    ev.title,
+                    style: TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w700,
+                      color: ev.completed ? muted : txt,
+                      decoration: ev.completed ? TextDecoration.lineThrough : null,
+                    ),
+                  ),
+                  if (ev.notes.isNotEmpty) Text(ev.notes, style: TextStyle(fontSize: 12, color: muted)),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${DateFormat('EEE d MMM · HH:mm', 'it_IT').format(ev.dateTime)}'
+                    '${ev.fromArgo ? (ev.editedByUser ? ' · Argo (modificato)' : ' · Argo') : ''}',
+                    style: TextStyle(fontSize: 11, color: muted),
+                  ),
+                ],
+              ),
             ),
-          ),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            icon: Icon(CupertinoIcons.trash, size: 17, color: muted),
-            onPressed: () async {
-              setState(() => _events.removeWhere((x) => x.id == ev.id));
-              await _saveEvents();
-            },
-          ),
-        ],
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              tooltip: 'Modifica',
+              icon: const Icon(CupertinoIcons.pencil, size: 18, color: Color(0xFF818CF8)),
+              onPressed: () => _showEventModal(existing: ev),
+            ),
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              tooltip: 'Elimina',
+              icon: Icon(CupertinoIcons.trash, size: 17, color: muted),
+              onPressed: () => _deleteEvent(ev),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   // --------------------------------------------------------------------------
-  // TAB 2: VOTI & MEDIE (PONDERATA / ARITMETICA)
+  // TAB 2: ORARIO SCOLASTICO (MATERIE + ORE MATTINA & POMERIGGIO)
+  // --------------------------------------------------------------------------
+
+  Widget _buildTimetableTab(bool d, Color card, Color border) {
+    final txt = d ? Colors.white : const Color(0xFF0F172A);
+    final muted = d ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
+    final sched = _timetable[_ttDay] ?? DaySchedule.initial(_ttDay);
+    final todayWd = DateTime.now().weekday;
+
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 40),
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text('🕒 Orario Scolastico',
+                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: txt)),
+            ),
+            Container(
+              padding: const EdgeInsets.all(3),
+              decoration: cardDeco(card, border, 22),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _segBtn(!_ttWeekOverview, CupertinoIcons.calendar_today, 'Giorno', muted,
+                      () => setState(() => _ttWeekOverview = false)),
+                  _segBtn(_ttWeekOverview, CupertinoIcons.square_grid_2x2, 'Settimana', muted,
+                      () => setState(() => _ttWeekOverview = true)),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        if (_ttWeekOverview)
+          _buildWeekOverview(d, card, border, txt, muted)
+        else ...[
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (int wd = 1; wd <= 6; wd++)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: GestureDetector(
+                      onTap: () => setState(() => _ttDay = wd),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+                        decoration: BoxDecoration(
+                          gradient: _ttDay == wd
+                              ? const LinearGradient(
+                                  colors: [VibePalette.primary, VibePalette.primaryGlow])
+                              : null,
+                          color: _ttDay == wd ? null : card,
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                              color: _ttDay == wd
+                                  ? VibePalette.primary
+                                  : (todayWd == wd ? VibePalette.capBlue : border)),
+                        ),
+                        child: Column(
+                          children: [
+                            Text(
+                              _dayShort[wd]!,
+                              style: TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w800,
+                                color: _ttDay == wd ? Colors.white : txt,
+                              ),
+                            ),
+                            if ((_timetable[wd]?.afternoon.isNotEmpty ?? false))
+                              Padding(
+                                padding: const EdgeInsets.only(top: 3),
+                                child: Text(
+                                  '+${_timetable[wd]!.afternoon.length} pom',
+                                  style: TextStyle(
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: _ttDay == wd ? Colors.white70 : VibePalette.interrogazioneAmber,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // CARD MATTINA
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: cardDeco(card, border),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '☀️ Mattina · ${_dayNames[_ttDay]} (${sched.morning.length} ore)',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: txt),
+                      ),
+                    ),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      tooltip: 'Togli ora mattina',
+                      onPressed: sched.morning.isEmpty
+                          ? null
+                          : () async {
+                              final next = [...sched.morning]..removeLast();
+                              setState(() => _timetable[_ttDay] =
+                                  DaySchedule(morning: next, afternoon: sched.afternoon));
+                              await _saveTimetable();
+                            },
+                      icon: Icon(CupertinoIcons.minus_circle, color: muted, size: 21),
+                    ),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      tooltip: 'Aggiungi ora mattina',
+                      onPressed: sched.morning.length >= 8
+                          ? null
+                          : () async {
+                              final next = [
+                                ...sched.morning,
+                                LessonSlot(time: DaySchedule.defaultMorningTime(sched.morning.length)),
+                              ];
+                              setState(() => _timetable[_ttDay] =
+                                  DaySchedule(morning: next, afternoon: sched.afternoon));
+                              await _saveTimetable();
+                            },
+                      icon: const Icon(CupertinoIcons.plus_circle_fill,
+                          color: VibePalette.primary, size: 22),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                if (sched.morning.isEmpty)
+                  Text('Nessuna ora al mattino. Premi + per aggiungere ore.',
+                      style: TextStyle(fontSize: 13, color: muted))
+                else
+                  for (int i = 0; i < sched.morning.length; i++)
+                    _lessonRow(
+                      indexLabel: '${i + 1}ª',
+                      slot: sched.morning[i],
+                      isAfternoon: false,
+                      d: d,
+                      border: border,
+                      txt: txt,
+                      muted: muted,
+                      onTap: () => _editLessonSlotModal(_ttDay, false, i),
+                    ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // CARD ORE POMERIGGIO (AGGIUNGI / TOGLI ORE POMERIGGIO)
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: cardDeco(card, border),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '🌇 Ore Pomeriggio (${sched.afternoon.length})',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: txt),
+                          ),
+                          Text(
+                            'Aggiungi o rimuovi rientri pomeridiani per ${_dayNames[_ttDay]}',
+                            style: TextStyle(fontSize: 12, color: muted),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (sched.afternoon.isNotEmpty)
+                      TextButton.icon(
+                        onPressed: () async {
+                          final next = [...sched.afternoon]..removeLast();
+                          setState(() => _timetable[_ttDay] =
+                              DaySchedule(morning: sched.morning, afternoon: next));
+                          await _saveTimetable();
+                        },
+                        icon: const Icon(CupertinoIcons.minus_circle,
+                            size: 16, color: VibePalette.verificaRed),
+                        label: const Text('Togli',
+                            style: TextStyle(
+                                color: VibePalette.verificaRed, fontWeight: FontWeight.w700)),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (sched.afternoon.isEmpty)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: d ? alphaCol(VibePalette.darkCardAlt, 0.5) : VibePalette.lightCardAlt,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: border),
+                    ),
+                    child: Text(
+                      'Nessuna ora pomeridiana impostata in questo giorno.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 13, color: muted),
+                    ),
+                  )
+                else
+                  for (int i = 0; i < sched.afternoon.length; i++)
+                    _lessonRow(
+                      indexLabel: '${i + 1}ª pom',
+                      slot: sched.afternoon[i],
+                      isAfternoon: true,
+                      d: d,
+                      border: border,
+                      txt: txt,
+                      muted: muted,
+                      onTap: () => _editLessonSlotModal(_ttDay, true, i),
+                      onRemove: () async {
+                        final next = [...sched.afternoon]..removeAt(i);
+                        setState(() => _timetable[_ttDay] =
+                            DaySchedule(morning: sched.morning, afternoon: next));
+                        await _saveTimetable();
+                      },
+                    ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.tonalIcon(
+                    onPressed: () async {
+                      final newIdx = sched.afternoon.length;
+                      final next = [
+                        ...sched.afternoon,
+                        LessonSlot(time: DaySchedule.defaultAfternoonTime(newIdx)),
+                      ];
+                      setState(() => _timetable[_ttDay] =
+                          DaySchedule(morning: sched.morning, afternoon: next));
+                      await _saveTimetable();
+                      if (mounted) _editLessonSlotModal(_ttDay, true, newIdx);
+                    },
+                    icon: const Icon(CupertinoIcons.plus_circle_fill, size: 18),
+                    label: const Text('Aggiungi ora pomeriggio'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _lessonRow({
+    required String indexLabel,
+    required LessonSlot slot,
+    required bool isAfternoon,
+    required bool d,
+    required Color border,
+    required Color txt,
+    required Color muted,
+    required VoidCallback onTap,
+    VoidCallback? onRemove,
+  }) {
+    final hasSubj = slot.subject.trim().isNotEmpty;
+    final col = hasSubj
+        ? subjectAccent(slot.subject)
+        : (isAfternoon ? VibePalette.interrogazioneAmber : muted);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 9),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+          decoration: BoxDecoration(
+            color: d ? VibePalette.darkCardAlt : VibePalette.lightCardAlt,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: hasSubj ? alphaCol(col, 0.45) : border),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(
+                  color: alphaCol(col, 0.16),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(indexLabel,
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: col)),
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      hasSubj ? slot.subject : 'Tocca per inserire materia',
+                      style: TextStyle(
+                        fontSize: 14.5,
+                        fontWeight: hasSubj ? FontWeight.w800 : FontWeight.w500,
+                        fontStyle: hasSubj ? FontStyle.normal : FontStyle.italic,
+                        color: hasSubj ? txt : muted,
+                      ),
+                    ),
+                    if (slot.time.isNotEmpty || slot.room.isNotEmpty)
+                      Text(
+                        [if (slot.time.isNotEmpty) slot.time, if (slot.room.isNotEmpty) slot.room]
+                            .join('  ·  '),
+                        style: TextStyle(fontSize: 11.5, color: muted),
+                      ),
+                  ],
+                ),
+              ),
+              const Icon(CupertinoIcons.pencil, size: 17, color: Color(0xFF818CF8)),
+              if (onRemove != null) ...[
+                const SizedBox(width: 4),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  tooltip: 'Rimuovi ora pomeriggio',
+                  onPressed: onRemove,
+                  icon: const Icon(CupertinoIcons.minus_circle_fill,
+                      size: 19, color: VibePalette.verificaRed),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWeekOverview(bool d, Color card, Color border, Color txt, Color muted) {
+    return Column(
+      children: [
+        for (int wd = 1; wd <= 6; wd++)
+          Builder(builder: (_) {
+            final s = _timetable[wd] ?? DaySchedule.initial(wd);
+            final mFilled = s.morning.where((x) => x.subject.trim().isNotEmpty).toList();
+            final aFilled = s.afternoon.where((x) => x.subject.trim().isNotEmpty).toList();
+            return GestureDetector(
+              onTap: () => setState(() {
+                _ttDay = wd;
+                _ttWeekOverview = false;
+              }),
+              child: Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(16),
+                decoration: cardDeco(card, border, 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(_dayNames[wd]!,
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: txt)),
+                        ),
+                        Text('Modifica ›',
+                            style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                                color: VibePalette.capBlue)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    if (mFilled.isEmpty && s.afternoon.isEmpty)
+                      Text('Nessuna materia inserita', style: TextStyle(fontSize: 12.5, color: muted))
+                    else ...[
+                      if (mFilled.isNotEmpty)
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: [
+                            for (int i = 0; i < s.morning.length; i++)
+                              if (s.morning[i].subject.trim().isNotEmpty)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: alphaCol(subjectAccent(s.morning[i].subject), 0.16),
+                                    borderRadius: BorderRadius.circular(9),
+                                  ),
+                                  child: Text(
+                                    '${i + 1}ª ${s.morning[i].subject}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: subjectAccent(s.morning[i].subject),
+                                    ),
+                                  ),
+                                ),
+                          ],
+                        ),
+                      if (s.afternoon.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: [
+                            for (int i = 0; i < s.afternoon.length; i++)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: alphaCol(VibePalette.interrogazioneAmber, 0.18),
+                                  borderRadius: BorderRadius.circular(9),
+                                ),
+                                child: Text(
+                                  '🌇 ${i + 1}ª pom: ${aFilled.isEmpty && s.afternoon[i].subject.trim().isEmpty ? "Da scegliere" : (s.afternoon[i].subject.trim().isEmpty ? "Da scegliere" : s.afternoon[i].subject)}',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: VibePalette.interrogazioneAmber,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ],
+                ),
+              ),
+            );
+          }),
+      ],
+    );
+  }
+
+  void _editLessonSlotModal(int weekday, bool isAfternoon, int idx) {
+    final sched = _timetable[weekday] ?? DaySchedule.initial(weekday);
+    final list = isAfternoon ? sched.afternoon : sched.morning;
+    if (idx < 0 || idx >= list.length) return;
+
+    final current = list[idx];
+    final subjCtrl = TextEditingController(text: current.subject);
+    final timeCtrl = TextEditingController(
+      text: current.time.isNotEmpty
+          ? current.time
+          : (isAfternoon
+              ? DaySchedule.defaultAfternoonTime(idx)
+              : DaySchedule.defaultMorningTime(idx)),
+    );
+    final roomCtrl = TextEditingController(text: current.room);
+    final suggestions = _knownSubjects;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: widget.isDark ? VibePalette.darkCard : VibePalette.lightCard,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setM) => Padding(
+          padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 22),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${isAfternoon ? "🌇 ${idx + 1}ª ora pomeriggio" : "☀️ ${idx + 1}ª ora mattina"} · ${_dayNames[weekday]}',
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: subjCtrl,
+                  decoration: fieldDeco('Materia (es. Matematica)', icon: CupertinoIcons.book),
+                ),
+                if (suggestions.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    height: 36,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: suggestions.length,
+                      separatorBuilder: (_, __) => const SizedBox(width: 6),
+                      itemBuilder: (_, i) {
+                        final s = suggestions[i];
+                        return ActionChip(
+                          label: Text(s, style: const TextStyle(fontSize: 12)),
+                          onPressed: () => setM(() => subjCtrl.text = s),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: timeCtrl,
+                        decoration: fieldDeco('Orario (es. 08:00 - 09:00)', icon: CupertinoIcons.clock),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextField(
+                        controller: roomCtrl,
+                        decoration: fieldDeco('Aula / Lab (opz.)', icon: CupertinoIcons.location),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        if (isAfternoon) {
+                          final next = [...sched.afternoon]..removeAt(idx);
+                          setState(() => _timetable[weekday] =
+                              DaySchedule(morning: sched.morning, afternoon: next));
+                        } else {
+                          final next = [...sched.morning];
+                          next[idx] = LessonSlot(time: timeCtrl.text.trim());
+                          setState(() => _timetable[weekday] =
+                              DaySchedule(morning: next, afternoon: sched.afternoon));
+                        }
+                        await _saveTimetable();
+                        if (ctx.mounted) Navigator.pop(ctx);
+                      },
+                      icon: Icon(
+                        isAfternoon ? CupertinoIcons.trash : CupertinoIcons.clear_circled,
+                        size: 16,
+                        color: VibePalette.verificaRed,
+                      ),
+                      label: Text(
+                        isAfternoon ? 'Rimuovi ora' : 'Svuota',
+                        style: const TextStyle(color: VibePalette.verificaRed),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: () async {
+                          final updated = LessonSlot(
+                            subject: subjCtrl.text.trim(),
+                            time: timeCtrl.text.trim(),
+                            room: roomCtrl.text.trim(),
+                          );
+                          if (isAfternoon) {
+                            final next = [...sched.afternoon];
+                            next[idx] = updated;
+                            setState(() => _timetable[weekday] =
+                                DaySchedule(morning: sched.morning, afternoon: next));
+                          } else {
+                            final next = [...sched.morning];
+                            next[idx] = updated;
+                            setState(() => _timetable[weekday] =
+                                DaySchedule(morning: next, afternoon: sched.afternoon));
+                          }
+                          await _saveTimetable();
+                          if (ctx.mounted) Navigator.pop(ctx);
+                        },
+                        child: const Text('Salva Ora'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // --------------------------------------------------------------------------
+  // TAB 3: VOTI & MEDIE (PONDERATA / ARITMETICA)
   // --------------------------------------------------------------------------
 
   double _avg(List<SchoolGrade> list) {
@@ -1955,7 +2614,7 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   Color _gradeCol(double v) => v >= 6.0
-      ? VibePalette.compitoBlueGreen
+      ? VibePalette.okGreen
       : (v >= 5.5 ? VibePalette.interrogazioneAmber : VibePalette.verificaRed);
 
   Widget _buildGradesTab(bool d, Color card, Color border) {
@@ -2041,7 +2700,7 @@ class _HomeShellState extends State<HomeShell> {
                 Text('Nessun voto presente',
                     style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.w800, color: txt)),
                 const SizedBox(height: 6),
-                Text('Sincronizza Argo nella scheda "Argo & Sync" o premi + per inserire un voto.',
+                Text('Sincronizza Argo nella scheda "Argo" o premi + per inserire un voto.',
                     textAlign: TextAlign.center, style: TextStyle(color: muted)),
               ],
             ),
@@ -2107,7 +2766,7 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   // --------------------------------------------------------------------------
-  // MODALI NOTIFICHE, NUOVO IMPEGNO E NUOVO VOTO
+  // MODALI NOTIFICHE, CREA / MODIFICA EVENTO (ANCHE ARGO) E NUOVO VOTO
   // --------------------------------------------------------------------------
 
   void _showNotificationSheet() {
@@ -2144,13 +2803,15 @@ class _HomeShellState extends State<HomeShell> {
     );
   }
 
-  void _showAddEventModal(DateTime baseDate) {
-    final subjCtrl = TextEditingController(text: 'Matematica');
-    final titleCtrl = TextEditingController();
-    final notesCtrl = TextEditingController();
-    var cat = EventCategory.verifica;
-    var dt = DateTime(baseDate.year, baseDate.month, baseDate.day, 8, 15);
-    var prio = true;
+  void _showEventModal({DateTime? baseDate, SchoolEvent? existing}) {
+    final isEdit = existing != null;
+    final subjCtrl = TextEditingController(text: existing?.subject ?? 'Matematica');
+    final titleCtrl = TextEditingController(text: existing?.title ?? '');
+    final notesCtrl = TextEditingController(text: existing?.notes ?? '');
+    var cat = existing?.category ?? EventCategory.verifica;
+    final startDay = baseDate ?? DateTime.now();
+    var dt = existing?.dateTime ?? DateTime(startDay.year, startDay.month, startDay.day, 8, 15);
+    var prio = existing?.highPriority ?? true;
 
     showModalBottomSheet(
       context: context,
@@ -2165,8 +2826,10 @@ class _HomeShellState extends State<HomeShell> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('✨ Nuovo Impegno',
-                    style: TextStyle(fontSize: 18.5, fontWeight: FontWeight.w800)),
+                Text(
+                  isEdit ? '✏️ Modifica Impegno' : '✨ Nuovo Impegno',
+                  style: const TextStyle(fontSize: 18.5, fontWeight: FontWeight.w800),
+                ),
                 const SizedBox(height: 12),
                 Wrap(
                   spacing: 8,
@@ -2182,20 +2845,11 @@ class _HomeShellState extends State<HomeShell> {
                       .toList(),
                 ),
                 const SizedBox(height: 10),
-                TextField(
-                    controller: subjCtrl,
-                    decoration:
-                        const InputDecoration(labelText: 'Materia', border: OutlineInputBorder())),
+                TextField(controller: subjCtrl, decoration: fieldDeco('Materia')),
                 const SizedBox(height: 10),
-                TextField(
-                    controller: titleCtrl,
-                    decoration: const InputDecoration(
-                        labelText: 'Argomento / Titolo', border: OutlineInputBorder())),
+                TextField(controller: titleCtrl, decoration: fieldDeco('Argomento / Titolo')),
                 const SizedBox(height: 10),
-                TextField(
-                    controller: notesCtrl,
-                    decoration: const InputDecoration(
-                        labelText: 'Note (opzionale)', border: OutlineInputBorder())),
+                TextField(controller: notesCtrl, decoration: fieldDeco('Note (opzionale)')),
                 const SizedBox(height: 10),
                 Row(
                   children: [
@@ -2237,31 +2891,63 @@ class _HomeShellState extends State<HomeShell> {
                   value: prio,
                   onChanged: (v) => setM(() => prio = v),
                 ),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: () async {
-                      final s = subjCtrl.text.trim().isEmpty ? 'Materia' : subjCtrl.text.trim();
-                      final t =
-                          titleCtrl.text.trim().isEmpty ? '${cat.label} di $s' : titleCtrl.text.trim();
-                      setState(() {
-                        _events.add(SchoolEvent(
-                          id: 'm_${DateTime.now().millisecondsSinceEpoch}',
-                          title: t,
-                          subject: s,
-                          notes: notesCtrl.text.trim(),
-                          dateTime: dt,
-                          category: cat,
-                          highPriority: prio,
-                        ));
-                        _selectedDay = dt;
-                        _focusedDay = dt;
-                      });
-                      await _saveEvents();
-                      if (ctx.mounted) Navigator.pop(ctx);
-                    },
-                    child: const Text('Salva Impegno'),
-                  ),
+                Row(
+                  children: [
+                    if (isEdit) ...[
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          await _deleteEvent(existing);
+                          if (ctx.mounted) Navigator.pop(ctx);
+                        },
+                        icon: const Icon(CupertinoIcons.trash,
+                            size: 16, color: VibePalette.verificaRed),
+                        label: const Text('Elimina',
+                            style: TextStyle(color: VibePalette.verificaRed)),
+                      ),
+                      const SizedBox(width: 10),
+                    ],
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: () async {
+                          final s = subjCtrl.text.trim().isEmpty ? 'Materia' : subjCtrl.text.trim();
+                          final t = titleCtrl.text.trim().isEmpty
+                              ? '${cat.label} di $s'
+                              : titleCtrl.text.trim();
+                          setState(() {
+                            if (isEdit) {
+                              final idx = _events.indexWhere((x) => x.id == existing.id);
+                              if (idx != -1) {
+                                _events[idx] = existing.copyWith(
+                                  title: t,
+                                  subject: s,
+                                  notes: notesCtrl.text.trim(),
+                                  dateTime: dt,
+                                  category: cat,
+                                  highPriority: prio,
+                                  editedByUser: true,
+                                );
+                              }
+                            } else {
+                              _events.add(SchoolEvent(
+                                id: 'm_${DateTime.now().millisecondsSinceEpoch}',
+                                title: t,
+                                subject: s,
+                                notes: notesCtrl.text.trim(),
+                                dateTime: dt,
+                                category: cat,
+                                highPriority: prio,
+                              ));
+                            }
+                            _selectedDay = dt;
+                            _focusedDay = dt;
+                          });
+                          await _saveEvents();
+                          if (ctx.mounted) Navigator.pop(ctx);
+                        },
+                        child: Text(isEdit ? 'Salva Modifiche' : 'Salva Impegno'),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -2294,10 +2980,7 @@ class _HomeShellState extends State<HomeShell> {
                 const Text('🎯 Nuovo Voto',
                     style: TextStyle(fontSize: 18.5, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 12),
-                TextField(
-                    controller: subjCtrl,
-                    decoration:
-                        const InputDecoration(labelText: 'Materia', border: OutlineInputBorder())),
+                TextField(controller: subjCtrl, decoration: fieldDeco('Materia')),
                 const SizedBox(height: 10),
                 Text('Voto: ${val.toStringAsFixed(2)}  ·  Peso: ${(weight * 100).round()}%',
                     style: const TextStyle(fontWeight: FontWeight.w800)),
@@ -2316,10 +2999,7 @@ class _HomeShellState extends State<HomeShell> {
                       .toList(),
                 ),
                 const SizedBox(height: 10),
-                TextField(
-                    controller: descCtrl,
-                    decoration: const InputDecoration(
-                        labelText: 'Argomento (opzionale)', border: OutlineInputBorder())),
+                TextField(controller: descCtrl, decoration: fieldDeco('Argomento (opzionale)')),
                 const SizedBox(height: 14),
                 SizedBox(
                   width: double.infinity,
@@ -2352,7 +3032,7 @@ class _HomeShellState extends State<HomeShell> {
 }
 
 // ============================================================================
-// TAB 3: LOGIN REGISTRO ARGO & IMPOSTAZIONI
+// TAB 4: LOGIN REGISTRO ARGO & IMPOSTAZIONI
 // ============================================================================
 
 class _ArgoSettingsTab extends StatefulWidget {
@@ -2419,7 +3099,7 @@ class _ArgoSettingsTabState extends State<_ArgoSettingsTab> {
               Text(
                 widget.creds.lastSync != null
                     ? 'Ultima sincronizzazione: ${DateFormat('dd/MM/yyyy HH:mm').format(widget.creds.lastSync!)}'
-                    : 'Sincronizza compiti, verifiche e voti con DidUP Famiglia',
+                    : 'Sincronizza verifiche, interrogazioni e voti da DidUP Famiglia',
                 style: TextStyle(fontSize: 12.5, color: muted),
               ),
               if (widget.lastError != null && widget.lastError!.isNotEmpty) ...[
@@ -2452,31 +3132,23 @@ class _ArgoSettingsTabState extends State<_ArgoSettingsTab> {
               TextField(
                 controller: _schoolCtrl,
                 textCapitalization: TextCapitalization.characters,
-                decoration: const InputDecoration(
-                  labelText: 'Codice Scuola (es. SG12345)',
-                  prefixIcon: Icon(CupertinoIcons.building_2_fill),
-                  border: OutlineInputBorder(),
-                ),
+                decoration:
+                    fieldDeco('Codice Scuola (es. SG12345)', icon: CupertinoIcons.building_2_fill),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _userCtrl,
                 autocorrect: false,
-                decoration: const InputDecoration(
-                  labelText: 'Nome Utente Argo',
-                  prefixIcon: Icon(CupertinoIcons.person_fill),
-                  border: OutlineInputBorder(),
-                ),
+                decoration: fieldDeco('Nome Utente Argo', icon: CupertinoIcons.person_fill),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _passCtrl,
                 obscureText: _obscure,
-                decoration: InputDecoration(
-                  labelText: 'Password',
-                  prefixIcon: const Icon(CupertinoIcons.lock_fill),
-                  border: const OutlineInputBorder(),
-                  suffixIcon: IconButton(
+                decoration: fieldDeco(
+                  'Password',
+                  icon: CupertinoIcons.lock_fill,
+                  suffix: IconButton(
                     icon: Icon(_obscure ? CupertinoIcons.eye : CupertinoIcons.eye_slash),
                     onPressed: () => setState(() => _obscure = !_obscure),
                   ),
@@ -2544,7 +3216,8 @@ class _ArgoSettingsTabState extends State<_ArgoSettingsTab> {
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(CupertinoIcons.trash_circle, color: VibePalette.verificaRed),
-                title: const Text('Cancella dati salvati offline'),
+                title: const Text('Cancella eventi e voti salvati offline'),
+                subtitle: const Text('Il tuo orario scolastico viene mantenuto'),
                 onTap: widget.onReset,
               ),
             ],
@@ -2580,4 +3253,4 @@ class _DashedRRectPainter extends CustomPainter {
       old.color != color || old.radius != radius;
 }
 
-// === FINE FILE SCHOOL VIBE ARGO ===
+// === FINE FILE CALENDARIO SCUOLA ===
