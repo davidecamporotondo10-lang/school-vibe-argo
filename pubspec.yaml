@@ -1,0 +1,39 @@
+name: school_vibe_argo
+description: "school-vibe-argo — Calendario scolastico personale vibe-coded per studenti con integrazione Registro Elettronico Argo, voti, medie e notifiche locali."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # Icone intuitive stile iOS / Cupertino
+  cupertino_icons: ^1.0.8
+
+  # Client HTTP e crittografia PKCE OAuth2 per sincronizzazione Registro Argo
+  http: ^1.2.2
+  crypto: ^3.0.5
+
+  # Archiviazione locale offline (eventi, voti, credenziali, preferenze)
+  shared_preferences: ^2.3.3
+
+  # Sistema di notifiche push locali programmate (giorno prima + mattina stessa)
+  flutter_local_notifications: ^18.0.1
+  timezone: ^0.9.4
+
+  # Localizzazione italiana date e calendario interattivo mensile/settimanale
+  intl: ^0.19.0
+  table_calendar: ^3.1.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
