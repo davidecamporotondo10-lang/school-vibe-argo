@@ -36,7 +36,7 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Genera progetto Android pulito, nome app e icona PNG
+      - name: Genera progetto Android pulito, icona app e icone notifiche
         run: |
           cp pubspec.yaml /tmp/pubspec.yaml.bak
           cp lib/main.dart /tmp/main.dart.bak
@@ -60,6 +60,7 @@ jobs:
 
           BLUE = (61, 133, 198, 255)
           WHITE = (255, 255, 255, 255)
+          TRANSPARENT = (0, 0, 0, 0)
 
           CAP_AND_TASSEL = [
               (500, 190), (900, 365), (500, 540), (272, 440),
@@ -72,35 +73,70 @@ jobs:
               (715, 598), (500, 692), (285, 598),
           ]
 
-          def render_cap(out_px, scale=0.74):
+          def transform_pts(pts, hi, scale):
+              return [
+                  (
+                      hi * (0.5 + ((x - 500.0) / 1000.0) * scale),
+                      hi * (0.5 + ((y - 505.0) / 1000.0) * scale),
+                  )
+                  for (x, y) in pts
+              ]
+
+          def render_launcher(out_px, scale=0.74):
               hi = 2048
               img = Image.new("RGBA", (hi, hi), WHITE)
               draw = ImageDraw.Draw(img)
-              def tr(pts):
-                  return [
-                      (
-                          hi * (0.5 + ((x - 500.0) / 1000.0) * scale),
-                          hi * (0.5 + ((y - 505.0) / 1000.0) * scale),
-                      )
-                      for (x, y) in pts
-                  ]
-              draw.polygon(tr(CAP_AND_TASSEL), fill=BLUE)
-              draw.polygon(tr(HEADBAND), fill=BLUE)
+              draw.polygon(transform_pts(CAP_AND_TASSEL, hi, scale), fill=BLUE)
+              draw.polygon(transform_pts(HEADBAND, hi, scale), fill=BLUE)
               return img.resize((out_px, out_px), Image.Resampling.LANCZOS).convert("RGB")
 
+          def render_stat_icon(out_px, scale=0.84):
+              hi = 2048
+              img = Image.new("RGBA", (hi, hi), TRANSPARENT)
+              draw = ImageDraw.Draw(img)
+              draw.polygon(transform_pts(CAP_AND_TASSEL, hi, scale), fill=WHITE)
+              draw.polygon(transform_pts(HEADBAND, hi, scale), fill=WHITE)
+              return img.resize((out_px, out_px), Image.Resampling.LANCZOS)
+
+          def render_large_notif_logo(out_px=256, scale=0.70):
+              hi = 2048
+              img = Image.new("RGBA", (hi, hi), TRANSPARENT)
+              draw = ImageDraw.Draw(img)
+              draw.rounded_rectangle([80, 80, hi - 80, hi - 80], radius=420, fill=WHITE)
+              draw.polygon(transform_pts(CAP_AND_TASSEL, hi, scale), fill=BLUE)
+              draw.polygon(transform_pts(HEADBAND, hi, scale), fill=BLUE)
+              return img.resize((out_px, out_px), Image.Resampling.LANCZOS)
+
           res_root = "android/app/src/main/res"
-          sizes = {
+
+          launcher_sizes = {
               "mipmap-mdpi": 48,
               "mipmap-hdpi": 72,
               "mipmap-xhdpi": 96,
               "mipmap-xxhdpi": 144,
               "mipmap-xxxhdpi": 192,
           }
-
-          for folder, px in sizes.items():
+          for folder, px in launcher_sizes.items():
               dpath = os.path.join(res_root, folder)
               os.makedirs(dpath, exist_ok=True)
-              render_cap(px).save(os.path.join(dpath, "ic_launcher.png"), format="PNG")
+              render_launcher(px).save(os.path.join(dpath, "ic_launcher.png"), format="PNG")
+
+          stat_sizes = {
+              "drawable": 48,
+              "drawable-mdpi": 24,
+              "drawable-hdpi": 36,
+              "drawable-xhdpi": 48,
+              "drawable-xxhdpi": 72,
+              "drawable-xxxhdpi": 96,
+          }
+          for folder, px in stat_sizes.items():
+              dpath = os.path.join(res_root, folder)
+              os.makedirs(dpath, exist_ok=True)
+              render_stat_icon(px).save(os.path.join(dpath, "ic_stat_school.png"), format="PNG")
+
+          drawable_dir = os.path.join(res_root, "drawable")
+          os.makedirs(drawable_dir, exist_ok=True)
+          render_large_notif_logo(256).save(os.path.join(drawable_dir, "ic_notif_logo.png"), format="PNG")
           PYEOF
 
           cat > android/app/build.gradle << 'EOF'
@@ -218,27 +254,24 @@ jobs:
         run: flutter build apk --release
 
       - name: Prepara file APK con nome leggibile
-        run: |
-          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/Calendario-Scuola.apk
+        run: cp build/app/outputs/flutter-apk/app-release.apk Calendario-Scuola.apk
 
-      - name: Carica APK negli Artifacts di GitHub
+      - name: Carica Artifact APK su GitHub Actions
         uses: actions/upload-artifact@v4
         with:
-          name: calendario-scuola-apk
-          path: build/app/outputs/flutter-apk/Calendario-Scuola.apk
+          name: Calendario-Scuola-APK
+          path: Calendario-Scuola.apk
           if-no-files-found: error
-          retention-days: 30
 
-      - name: Pubblica APK diretto in GitHub Releases (senza ZIP)
-        continue-on-error: true
+      - name: Pubblica link diretto APK (senza zip) nelle Releases
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if gh release view latest-apk >/dev/null 2>&1; then
-            gh release upload latest-apk build/app/outputs/flutter-apk/Calendario-Scuola.apk --clobber
+            gh release upload latest-apk Calendario-Scuola.apk --clobber
           else
-            gh release create latest-apk build/app/outputs/flutter-apk/Calendario-Scuola.apk \
-              --target "${{ github.sha }}" \
+            gh release create latest-apk Calendario-Scuola.apk \
               --title "Calendario Scuola APK" \
-              --notes "Scarica direttamente Calendario-Scuola.apk qui sotto per installarlo su Android."
+              --notes "Download diretto dell'APK installabile su Android."
           fi
