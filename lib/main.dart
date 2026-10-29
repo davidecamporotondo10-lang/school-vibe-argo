@@ -145,9 +145,6 @@ extension EventCategoryX on EventCategory {
         EventCategory.interrogazione: VibePalette.interrogazioneAmber,
         EventCategory.altro: VibePalette.altroPurple,
       }[this]!;
-
-  bool get isHighPriorityDefault =>
-      this == EventCategory.verifica || this == EventCategory.interrogazione;
 }
 
 enum EventReminderMode {
@@ -181,11 +178,11 @@ extension EventReminderModeX on EventReminderMode {
         EventReminderMode.none: 'Nessuna notifica',
       }[this]!;
 
-  static EventReminderMode fromKey(String? raw, {required bool fallbackActive}) {
+  static EventReminderMode fromKey(String? raw) {
     for (final m in EventReminderMode.values) {
       if (m.key == raw) return m;
     }
-    return fallbackActive ? EventReminderMode.defaultBoth : EventReminderMode.none;
+    return EventReminderMode.defaultBoth;
   }
 }
 
@@ -193,7 +190,7 @@ class SchoolEvent {
   final String id, title, subject, notes;
   final DateTime dateTime;
   final EventCategory category;
-  final bool highPriority, completed, fromArgo, editedByUser;
+  final bool completed, fromArgo, editedByUser;
   final EventReminderMode reminderMode;
   final DateTime? customReminderAt;
 
@@ -204,7 +201,6 @@ class SchoolEvent {
     this.notes = '',
     required this.dateTime,
     required this.category,
-    this.highPriority = false,
     this.completed = false,
     this.fromArgo = false,
     this.editedByUser = false,
@@ -218,7 +214,6 @@ class SchoolEvent {
     String? notes,
     DateTime? dateTime,
     EventCategory? category,
-    bool? highPriority,
     bool? completed,
     bool? editedByUser,
     EventReminderMode? reminderMode,
@@ -231,7 +226,6 @@ class SchoolEvent {
         notes: notes ?? this.notes,
         dateTime: dateTime ?? this.dateTime,
         category: category ?? this.category,
-        highPriority: highPriority ?? this.highPriority,
         completed: completed ?? this.completed,
         fromArgo: fromArgo,
         editedByUser: editedByUser ?? this.editedByUser,
@@ -266,7 +260,6 @@ class SchoolEvent {
         'notes': notes,
         'dateTime': dateTime.toIso8601String(),
         'category': category.name,
-        'highPriority': highPriority,
         'completed': completed,
         'fromArgo': fromArgo,
         'editedByUser': editedByUser,
@@ -279,11 +272,6 @@ class SchoolEvent {
       (e) => e.name == '${j['category'] ?? 'altro'}',
       orElse: () => EventCategory.altro,
     );
-    final prio = j['highPriority'] as bool? ?? cat.isHighPriorityDefault;
-    final rem = EventReminderModeX.fromKey(
-      j['reminderMode'] as String?,
-      fallbackActive: prio || cat.isHighPriorityDefault,
-    );
     final customRaw = j['customReminderAt'] as String?;
     return SchoolEvent(
       id: '${j['id'] ?? ''}',
@@ -292,11 +280,10 @@ class SchoolEvent {
       notes: '${j['notes'] ?? ''}',
       dateTime: DateTime.tryParse('${j['dateTime'] ?? ''}') ?? DateTime.now(),
       category: cat,
-      highPriority: prio,
       completed: j['completed'] as bool? ?? false,
       fromArgo: j['fromArgo'] as bool? ?? false,
       editedByUser: j['editedByUser'] as bool? ?? false,
-      reminderMode: rem,
+      reminderMode: EventReminderModeX.fromKey(j['reminderMode'] as String?),
       customReminderAt: customRaw != null ? DateTime.tryParse(customRaw) : null,
     );
   }
@@ -321,7 +308,7 @@ class SchoolGrade {
 
   Map<String, dynamic> toJson() => {
         'id': id,
-        'subject': subject,
+        'subject': id.isEmpty ? '' : subject,
         'value': value,
         'weight': weight,
         'type': type,
@@ -343,37 +330,27 @@ class SchoolGrade {
 }
 
 class LessonSlot {
-  final String subject, time, room;
-  const LessonSlot({this.subject = '', this.time = '', this.room = ''});
+  final String subject, time;
+  const LessonSlot({this.subject = '', this.time = ''});
 
-  // Ore pomeridiane: dalle 13:45 in poi (es. 14:30 - 15:30, 15:30 - 16:30)
   bool isAfternoon(int slotIndex) {
     final parsed = parseSlotMinutes(time);
     if (parsed != null) return parsed.$1 >= (13 * 60 + 45);
     return slotIndex >= 6;
   }
 
-  LessonSlot copyWith({String? subject, String? time, String? room}) => LessonSlot(
-        subject: subject ?? this.subject,
-        time: time ?? this.time,
-        room: room ?? this.room,
-      );
-
-  Map<String, dynamic> toJson() => {'subject': subject, 'time': time, 'room': room};
+  Map<String, dynamic> toJson() => {'subject': subject, 'time': time};
 
   factory LessonSlot.fromJson(Map<String, dynamic> j, int idx) {
     final rawTime = '${j['time'] ?? ''}'.trim();
     return LessonSlot(
       subject: '${j['subject'] ?? ''}',
       time: rawTime.isNotEmpty ? rawTime : DaySchedule.defaultSlotTime(idx),
-      room: '${j['room'] ?? ''}',
     );
   }
 }
 
 class DaySchedule {
-  // Scansione oraria ufficiale della scuola:
-  // 6 ore mattutine fino alle 13:45 + ore pomeridiane 14:30-15:30 e 15:30-16:30
   static const List<String> officialTimes = [
     '07:55 - 08:55',
     '08:55 - 09:55',
@@ -422,7 +399,6 @@ class DaySchedule {
     return DaySchedule.initial();
   }
 
-  // Migrazione automatica di eventuali materie salvate nella versione precedente
   factory DaySchedule.migrateLegacy(Map<String, dynamic> legacy) {
     final m = (legacy['morning'] as List?) ?? const [];
     final a = (legacy['afternoon'] as List?) ?? const [];
@@ -432,7 +408,6 @@ class DaySchedule {
         return LessonSlot(
           subject: '${item['subject'] ?? ''}',
           time: defaultSlotTime(i),
-          room: '${item['room'] ?? ''}',
         );
       }
       return LessonSlot(time: defaultSlotTime(i));
@@ -443,7 +418,6 @@ class DaySchedule {
         migrated.add(LessonSlot(
           subject: '${item['subject'] ?? ''}',
           time: defaultSlotTime(6 + j),
-          room: '${item['room'] ?? ''}',
         ));
       }
     }
@@ -466,7 +440,7 @@ class ArgoCredentials {
 }
 
 // ============================================================================
-// STORAGE OFFLINE & NOTIFICHE (07:20 GIORNALIERA + PERSONALIZZATE PER EVENTO)
+// STORAGE OFFLINE & NOTIFICHE CON LOGO APP (ic_stat_school + ic_notif_logo)
 // ============================================================================
 
 class StorageService {
@@ -477,6 +451,7 @@ class StorageService {
   static const _kDeletedArgo = 'sv_deleted_argo_v1';
   static const _kDark = 'sv_dark_v1';
   static const _kNotify = 'sv_notify_v1';
+  static const _kMorningNotify = 'sv_morning_notify_v1';
   static const _kSchool = 'sv_argo_school';
   static const _kUser = 'sv_argo_user';
   static const _kPass = 'sv_argo_pass';
@@ -495,6 +470,9 @@ class StorageService {
 
   bool loadNotifyEnabled() => _p.getBool(_kNotify) ?? true;
   Future<void> saveNotifyEnabled(bool v) => _p.setBool(_kNotify, v);
+
+  bool loadMorningNotifyEnabled() => _p.getBool(_kMorningNotify) ?? true;
+  Future<void> saveMorningNotifyEnabled(bool v) => _p.setBool(_kMorningNotify, v);
 
   Set<String> loadDeletedArgoIds() => (_p.getStringList(_kDeletedArgo) ?? const []).toSet();
   Future<void> saveDeletedArgoIds(Set<String> ids) =>
@@ -620,7 +598,7 @@ class NotificationService {
     } catch (_) {}
     try {
       await _plugin.initialize(const InitializationSettings(
-        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+        android: AndroidInitializationSettings('ic_stat_school'),
       ));
       final androidPlugin =
           _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
@@ -631,9 +609,12 @@ class NotificationService {
 
   NotificationDetails _details() => const NotificationDetails(
         android: AndroidNotificationDetails(
-          'calendario_scuola_channel',
+          'calendario_scuola_v2',
           'Orario & Promemoria Scolastici',
-          channelDescription: 'Notifica orario alle 07:20 e promemoria impegni personalizzati',
+          channelDescription: 'Notifica orario alle 07:20 e promemoria impegni',
+          icon: 'ic_stat_school',
+          color: VibePalette.capBlue,
+          largeIcon: DrawableResourceAndroidBitmap('ic_notif_logo'),
           importance: Importance.max,
           priority: Priority.high,
         ),
@@ -644,33 +625,38 @@ class NotificationService {
     await _plugin.show(
       999001,
       'Calendario Scuola · Notifiche attive',
-      'Riceverai il promemoria dell\'orario ogni mattina alle 07:20 e gli avvisi dei tuoi impegni.',
+      'Ecco l\'anteprima della notifica con il logo di Calendario Scuola.',
       _details(),
     );
   }
 
-  Future<void> syncNotifications(List<SchoolEvent> events, {required bool enabled}) async {
+  Future<void> syncNotifications(
+    List<SchoolEvent> events, {
+    required bool enabled,
+    bool morningEnabled = true,
+  }) async {
     if (!_ready) await init();
     try {
       await _plugin.cancelAll();
     } catch (_) {}
+
+    if (morningEnabled) {
+      final nowTz = tz.TZDateTime.now(tz.local);
+      var next0720 = tz.TZDateTime(tz.local, nowTz.year, nowTz.month, nowTz.day, 7, 20);
+      if (!next0720.isAfter(nowTz)) {
+        next0720 = next0720.add(const Duration(days: 1));
+      }
+      await _scheduleTz(
+        _dailyTimetableId,
+        'Orario scolastico di oggi',
+        'Buongiorno! Apri Calendario Scuola per controllare l\'orario di oggi.',
+        next0720,
+        matchComponents: DateTimeComponents.time,
+      );
+    }
+
     if (!enabled) return;
 
-    // 1) Notifica giornaliera ricorrente alle 07:20 per controllare l'orario sull'app
-    final nowTz = tz.TZDateTime.now(tz.local);
-    var next0720 = tz.TZDateTime(tz.local, nowTz.year, nowTz.month, nowTz.day, 7, 20);
-    if (!next0720.isAfter(nowTz)) {
-      next0720 = next0720.add(const Duration(days: 1));
-    }
-    await _scheduleTz(
-      _dailyTimetableId,
-      'Orario scolastico di oggi',
-      'Buongiorno! Apri Calendario Scuola per controllare l\'orario di oggi.',
-      next0720,
-      matchComponents: DateTimeComponents.time,
-    );
-
-    // 2) Notifiche personalizzate per ciascun evento
     final now = DateTime.now();
     for (int i = 0; i < events.length; i++) {
       final ev = events[i];
@@ -761,7 +747,7 @@ class NotificationService {
 }
 
 // ============================================================================
-// INTEGRAZIONE REGISTRO ELETTRONICO ARGO (DidUP 1.30.2+ OAuth2 + PAGINA CONTINUA)
+// INTEGRAZIONE REGISTRO ELETTRONICO ARGO (INVARIATA AL 100%)
 // ============================================================================
 
 class ArgoSyncResult {
@@ -916,16 +902,13 @@ class ArgoApiService {
       .replaceAll(r'\x3D', '=')
       .replaceAll(r'\/', '/');
 
-  // Estrae l'URL dalla pagina intermedia Argo ("Autenticazione riuscita. Ti stiamo riportando all'applicazione… Continua")
   static String? _extractNextUrlFromHtml(String html) {
     final decoded = _unescapeUrl(html);
 
-    // 1) Schema custom diretto dell'app Argo (con il parametro code=...)
     final customScheme =
         RegExp(r'it\.argosoft\.didup\.famiglia\.new://[^\s"\x27<>`\\]+').firstMatch(decoded);
     if (customScheme != null) return _unescapeUrl(customScheme.group(0)!);
 
-    // 2) Eventuale Android intent:// con scheme it.argosoft.didup.famiglia.new
     final intentMatch = RegExp(
       r'intent://([^\s"\x27<>`#]+)#Intent;[^"\x27<>`]*scheme=it\.argosoft\.didup\.famiglia\.new',
       caseSensitive: false,
@@ -934,14 +917,12 @@ class ArgoApiService {
       return 'it.argosoft.didup.famiglia.new://${_unescapeUrl(intentMatch.group(1)!)}';
     }
 
-    // 3) URL OAuth2 Hydra diretto (es. con consent_verifier=... o login_verifier=...)
     final hydraUrl = RegExp(
       r'https?://auth\.portaleargo\.it/oauth2/auth\?[^\s"\x27<>`\\]+',
       caseSensitive: false,
     ).firstMatch(decoded);
     if (hydraUrl != null) return _unescapeUrl(hydraUrl.group(0)!);
 
-    // 4) Pulsante / Link <a href="...">Continua</a> (o qualsiasi link di prosecuzione nella pagina)
     final aTags = RegExp(
       r'<a\b[^>]*\bhref\s*=\s*["\x27]([^"\x27]+)["\x27][^>]*>([\s\S]*?)</a>',
       caseSensitive: false,
@@ -969,14 +950,12 @@ class ArgoApiService {
       }
     }
 
-    // 5) Meta refresh
     final meta = RegExp(
       r'<meta\b[^>]*content\s*=\s*["\x27][^"\x27]*url\s*=\s*([^"\x27>\s;]+)',
       caseSensitive: false,
     ).firstMatch(html);
     if (meta != null) return _unescapeUrl(meta.group(1)!);
 
-    // 6) Redirect JavaScript: location.replace(...), location.assign(...), location.href = ..., variabili URL
     final jsPatterns = [
       RegExp(
         r'(?:window\.|document\.|self\.|top\.)?location\.(?:replace|assign)\s*\(\s*["\x27`]([^"\x27`]+)["\x27`]\s*\)',
@@ -1527,9 +1506,9 @@ class ArgoApiService {
         notes: docName.isNotEmpty ? 'Docente: $docName' : 'Promemoria Argo',
         dateTime: DateTime(d.year, d.month, d.day, 8, 15),
         category: cat,
-        highPriority: cat.isHighPriorityDefault,
-        reminderMode:
-            cat.isHighPriorityDefault ? EventReminderMode.defaultBoth : EventReminderMode.dayBefore17,
+        reminderMode: (cat == EventCategory.verifica || cat == EventCategory.interrogazione)
+            ? EventReminderMode.defaultBoth
+            : EventReminderMode.dayBefore17,
         fromArgo: true,
       ));
     }
@@ -1596,20 +1575,16 @@ class ArgoApiService {
           id: 'demo_1',
           title: 'Verifica scritta su limiti, continuità e asintoti',
           subject: 'Matematica',
-          notes: 'Cap. 12-13 + formulario.',
           dateTime: d(2, 8),
           category: EventCategory.verifica,
-          highPriority: true,
           fromArgo: true,
         ),
         SchoolEvent(
           id: 'demo_2',
           title: 'Interrogazione programmata su Leopardi e Romanticismo',
           subject: 'Italiano',
-          notes: 'Canti + Operette Morali.',
           dateTime: d(4, 9),
           category: EventCategory.interrogazione,
-          highPriority: true,
           fromArgo: true,
         ),
         SchoolEvent(
@@ -1618,7 +1593,6 @@ class ArgoApiService {
           subject: 'Informatica',
           dateTime: d(6, 11),
           category: EventCategory.verifica,
-          highPriority: true,
           fromArgo: true,
         ),
       ],
@@ -1677,7 +1651,7 @@ class ArgoApiService {
 }
 
 // ============================================================================
-// APP ROOT & HOME SHELL (4 SEZIONI: CALENDARIO, ORARIO, VOTI, ARGO)
+// APP ROOT & HOME SHELL (4 SEZIONI: CALENDARIO, ORARIO, VOTI, IMPOSTAZIONI)
 // ============================================================================
 
 class SchoolVibeApp extends StatefulWidget {
@@ -1756,6 +1730,7 @@ class _HomeShellState extends State<HomeShell> {
   late Set<String> _deletedArgoIds = widget.storage.loadDeletedArgoIds();
   late ArgoCredentials _argo = widget.storage.loadArgo();
   late bool _notifyOn = widget.storage.loadNotifyEnabled();
+  late bool _morningNotifyOn = widget.storage.loadMorningNotifyEnabled();
 
   bool _isListView = false;
   EventCategory? _catFilter;
@@ -1775,7 +1750,7 @@ class _HomeShellState extends State<HomeShell> {
   @override
   void initState() {
     super.initState();
-    NotificationService.instance.syncNotifications(_events, enabled: _notifyOn);
+    _resyncNotifications();
     _ticker = Timer.periodic(const Duration(minutes: 1), (_) {
       if (mounted) setState(() {});
     });
@@ -1787,10 +1762,16 @@ class _HomeShellState extends State<HomeShell> {
     super.dispose();
   }
 
+  Future<void> _resyncNotifications() => NotificationService.instance.syncNotifications(
+        _events,
+        enabled: _notifyOn,
+        morningEnabled: _morningNotifyOn,
+      );
+
   Future<void> _saveEvents() async {
     _events.sort((a, b) => a.dateTime.compareTo(b.dateTime));
     await widget.storage.saveEvents(_events);
-    await NotificationService.instance.syncNotifications(_events, enabled: _notifyOn);
+    await _resyncNotifications();
   }
 
   Future<void> _saveGrades() async {
@@ -1799,29 +1780,6 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   Future<void> _saveTimetable() => widget.storage.saveTimetable(_timetable);
-
-  List<String> get _knownSubjects {
-    final s = <String>{
-      for (final g in _grades)
-        if (g.subject.trim().isNotEmpty) g.subject.trim(),
-      for (final e in _events)
-        if (e.subject.trim().isNotEmpty && e.subject != 'Promemoria') e.subject.trim(),
-      for (final d in _timetable.values)
-        for (final sl in d.slots)
-          if (sl.subject.trim().isNotEmpty) sl.subject.trim(),
-      'Matematica',
-      'Italiano',
-      'Inglese',
-      'Storia',
-      'Fisica',
-      'Scienze',
-      'Informatica',
-      'Filosofia',
-      'Arte',
-      'Scienze motorie',
-    };
-    return s.toList()..sort();
-  }
 
   List<SchoolEvent> _eventsForDay(DateTime day) => _events
       .where((e) => isSameDay(e.dateTime, day) && (_catFilter == null || e.category == _catFilter))
@@ -1847,8 +1805,6 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   int get _todoTotal => _events.where((e) => !e.completed).length;
-  int get _highPrioTotal =>
-      _events.where((e) => !e.completed && (e.highPriority || e.category.isHighPriorityDefault)).length;
 
   Future<void> _deleteEvent(SchoolEvent ev) async {
     setState(() => _events.removeWhere((x) => x.id == ev.id));
@@ -1956,7 +1912,7 @@ class _HomeShellState extends State<HomeShell> {
                   _buildDashboardTab(d, card, border),
                   _buildTimetableTab(d, card, border),
                   _buildGradesTab(d, card, border),
-                  _ArgoSettingsTab(
+                  _SettingsTab(
                     isDark: d,
                     cardColor: card,
                     borderColor: border,
@@ -1964,16 +1920,21 @@ class _HomeShellState extends State<HomeShell> {
                     syncing: _syncing,
                     lastError: _lastSyncError,
                     notifyOn: _notifyOn,
+                    morningNotifyOn: _morningNotifyOn,
                     onSync: (s, u, p) => _runArgoSync(s, u, p),
                     onDemo: (s, u, p) => _runArgoSync(s, u, p, demo: true),
                     onToggleNotify: (v) async {
                       setState(() => _notifyOn = v);
                       await widget.storage.saveNotifyEnabled(v);
-                      await NotificationService.instance.syncNotifications(_events, enabled: v);
+                      await _resyncNotifications();
+                    },
+                    onToggleMorningNotify: (v) async {
+                      setState(() => _morningNotifyOn = v);
+                      await widget.storage.saveMorningNotifyEnabled(v);
+                      await _resyncNotifications();
                     },
                     onReset: () async {
                       await widget.storage.clearAll();
-                      await NotificationService.instance.syncNotifications([], enabled: _notifyOn);
                       setState(() {
                         _events = [];
                         _grades = [];
@@ -1981,6 +1942,7 @@ class _HomeShellState extends State<HomeShell> {
                         _argo = const ArgoCredentials();
                         _lastSyncError = null;
                       });
+                      await _resyncNotifications();
                     },
                   ),
                 ],
@@ -2037,9 +1999,9 @@ class _HomeShellState extends State<HomeShell> {
               label: 'Voti',
             ),
             NavigationDestination(
-              icon: Icon(CupertinoIcons.cloud_download),
-              selectedIcon: Icon(CupertinoIcons.cloud_download_fill, color: VibePalette.primary),
-              label: 'Argo',
+              icon: Icon(CupertinoIcons.gear),
+              selectedIcon: Icon(CupertinoIcons.gear_solid, color: VibePalette.primary),
+              label: 'Impostazioni',
             ),
           ],
         ),
@@ -2110,11 +2072,19 @@ class _HomeShellState extends State<HomeShell> {
               ],
             ),
           ),
-          _iconCircleBtn(_notifyOn ? CupertinoIcons.bell : CupertinoIcons.bell_slash, d, border,
-              _showNotificationSheet),
+          _iconCircleBtn(
+            (_notifyOn || _morningNotifyOn) ? CupertinoIcons.bell : CupertinoIcons.bell_slash,
+            d,
+            border,
+            () => setState(() => _tab = 3),
+          ),
           const SizedBox(width: 9),
-          _iconCircleBtn(d ? CupertinoIcons.moon_stars : CupertinoIcons.sun_max, d, border,
-              widget.onToggleTheme),
+          _iconCircleBtn(
+            d ? CupertinoIcons.moon_stars : CupertinoIcons.sun_max,
+            d,
+            border,
+            widget.onToggleTheme,
+          ),
         ],
       ),
     );
@@ -2137,7 +2107,7 @@ class _HomeShellState extends State<HomeShell> {
       );
 
   // --------------------------------------------------------------------------
-  // TAB 1: CALENDARIO & SCADENZE (CATEGORIE SENZA EMOJI)
+  // TAB 1: CALENDARIO & SCADENZE (SENZA ALTA PRIORITÀ, SENZA EMOJI CATEGORIE)
   // --------------------------------------------------------------------------
 
   Widget _buildDashboardTab(bool d, Color card, Color border) {
@@ -2157,37 +2127,30 @@ class _HomeShellState extends State<HomeShell> {
         Row(
           children: [
             Expanded(
-                child: _kpiBox(
-                    CupertinoIcons.calendar_today,
-                    const [Color(0xFF635BFF), Color(0xFF8B5CF6)],
-                    _next7DaysCount,
-                    'Prossimi 7 giorni',
-                    card,
-                    border,
-                    txt,
-                    muted)),
+              child: _kpiBox(
+                CupertinoIcons.calendar_today,
+                const [Color(0xFF635BFF), Color(0xFF8B5CF6)],
+                _next7DaysCount,
+                'Prossimi 7 giorni',
+                card,
+                border,
+                txt,
+                muted,
+              ),
+            ),
             const SizedBox(width: 10),
             Expanded(
-                child: _kpiBox(
-                    CupertinoIcons.checkmark_rectangle,
-                    const [Color(0xFF00B894), Color(0xFF00CEC9)],
-                    _todoTotal,
-                    'Da fare in totale',
-                    card,
-                    border,
-                    txt,
-                    muted)),
-            const SizedBox(width: 10),
-            Expanded(
-                child: _kpiBox(
-                    CupertinoIcons.flame_fill,
-                    const [Color(0xFFFF5E3A), Color(0xFFFF2A68)],
-                    _highPrioTotal,
-                    'Alta priorità',
-                    card,
-                    border,
-                    txt,
-                    muted)),
+              child: _kpiBox(
+                CupertinoIcons.checkmark_rectangle,
+                const [Color(0xFF00B894), Color(0xFF00CEC9)],
+                _todoTotal,
+                'Da fare in totale',
+                card,
+                border,
+                txt,
+                muted,
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 15),
@@ -2701,7 +2664,7 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   // --------------------------------------------------------------------------
-  // TAB 2: ORARIO SCOLASTICO (SCANSIONE ORARIA A SINISTRA, 6 ORE + POMERIGGIO)
+  // TAB 2: ORARIO SCOLASTICO (SCANSIONE ORARIA A SINISTRA, MAX 2 SLOT, NO AULA)
   // --------------------------------------------------------------------------
 
   Widget _buildTimetableTab(bool d, Color card, Color border) {
@@ -2710,7 +2673,6 @@ class _HomeShellState extends State<HomeShell> {
     final sched = _timetable[_ttDay] ?? DaySchedule.initial();
     final todayWd = DateTime.now().weekday;
 
-    // Costruisce la scansione oraria continua con stacco di 36 px per le ore dalle 13:45 in poi
     final dayRows = <Widget>[];
     bool gapAdded = false;
     bool hasMorningBefore = false;
@@ -2719,7 +2681,7 @@ class _HomeShellState extends State<HomeShell> {
       final slot = sched.slots[i];
       final afternoon = slot.isAfternoon(i);
       if (afternoon && hasMorningBefore && !gapAdded) {
-        dayRows.add(const SizedBox(height: 28)); // +8px margine inferiore = 36px totali (30-40px)
+        dayRows.add(const SizedBox(height: 28));
         gapAdded = true;
       }
       if (!afternoon) hasMorningBefore = true;
@@ -2820,8 +2782,6 @@ class _HomeShellState extends State<HomeShell> {
             ],
           ),
           const SizedBox(height: 16),
-
-          // UNICA CARD GIORNALIERA: + E - IN ALTO A DESTRA GESTISCONO ANCHE LE ORE POMERIDIANE (14:30-15:30, 15:30-16:30)
           Container(
             padding: const EdgeInsets.all(16),
             decoration: cardDeco(card, border),
@@ -2850,7 +2810,7 @@ class _HomeShellState extends State<HomeShell> {
                     ),
                     IconButton(
                       visualDensity: VisualDensity.compact,
-                      tooltip: 'Aggiungi ora (anche pomeridiana)',
+                      tooltip: 'Aggiungi ora',
                       onPressed: sched.slots.length >= 10
                           ? null
                           : () async {
@@ -2912,7 +2872,6 @@ class _HomeShellState extends State<HomeShell> {
           ),
           child: Row(
             children: [
-              // SCANSIONE ORARIA A SINISTRA (es. 07:55 - 08:55)
               Container(
                 width: 96,
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 6),
@@ -2941,25 +2900,14 @@ class _HomeShellState extends State<HomeShell> {
               ),
               const SizedBox(width: 11),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      hasSubj ? slot.subject : 'Tocca per inserire materia',
-                      style: TextStyle(
-                        fontSize: 14.5,
-                        fontWeight: hasSubj ? FontWeight.w800 : FontWeight.w500,
-                        fontStyle: hasSubj ? FontStyle.normal : FontStyle.italic,
-                        color: hasSubj ? txt : muted,
-                      ),
-                    ),
-                    if (slot.room.trim().isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Text(slot.room.trim(),
-                            style: TextStyle(fontSize: 11.5, color: muted)),
-                      ),
-                  ],
+                child: Text(
+                  hasSubj ? slot.subject : 'Tocca per inserire materia',
+                  style: TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: hasSubj ? FontWeight.w800 : FontWeight.w500,
+                    fontStyle: hasSubj ? FontStyle.normal : FontStyle.italic,
+                    color: hasSubj ? txt : muted,
+                  ),
                 ),
               ),
               const Icon(CupertinoIcons.pencil, size: 17, color: Color(0xFF818CF8)),
@@ -3039,6 +2987,11 @@ class _HomeShellState extends State<HomeShell> {
     );
   }
 
+  // Tendina modifica materia pulita:
+  // - nessun orario nel titolo in alto
+  // - nessuna materia consigliata
+  // - max 2 ore (niente 3 slot e niente reminder testuale)
+  // - nessuna casella Aula
   void _editLessonSlotModal(int weekday, int idx) {
     final sched = _timetable[weekday] ?? DaySchedule.initial();
     if (idx < 0 || idx >= sched.slots.length) return;
@@ -3053,12 +3006,11 @@ class _HomeShellState extends State<HomeShell> {
 
     final current = sched.slots[idx];
     int initialSpan = 1;
-    if (current.subject.trim().isNotEmpty) {
-      while (idx + initialSpan < sched.slots.length &&
-          sched.slots[idx + initialSpan].subject.trim().toLowerCase() ==
-              current.subject.trim().toLowerCase()) {
-        initialSpan++;
-      }
+    if (current.subject.trim().isNotEmpty &&
+        idx + 1 < sched.slots.length &&
+        sched.slots[idx + 1].subject.trim().toLowerCase() ==
+            current.subject.trim().toLowerCase()) {
+      initialSpan = 2;
     }
 
     int startMin = boundsOf(idx).$1;
@@ -3066,8 +3018,6 @@ class _HomeShellState extends State<HomeShell> {
     if (endMin <= startMin) endMin = startMin + 60;
 
     final subjCtrl = TextEditingController(text: current.subject);
-    final roomCtrl = TextEditingController(text: current.room);
-    final suggestions = _knownSubjects;
 
     int findStartSlot(int sMin) {
       for (int i = 0; i < max(sched.slots.length, 8); i++) {
@@ -3080,7 +3030,7 @@ class _HomeShellState extends State<HomeShell> {
       if (eMin <= sMin) return 1;
       final sIdx = findStartSlot(sMin);
       int count = 0;
-      for (int k = 0; k < 6; k++) {
+      for (int k = 0; k < 2; k++) {
         final b = boundsOf(sIdx + k);
         final overlap = min(eMin, b.$2) - max(sMin, b.$1);
         if (overlap >= 20) {
@@ -3089,7 +3039,7 @@ class _HomeShellState extends State<HomeShell> {
           break;
         }
       }
-      return count.clamp(1, 6);
+      return count.clamp(1, 2);
     }
 
     showModalBottomSheet(
@@ -3110,32 +3060,14 @@ class _HomeShellState extends State<HomeShell> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '${_dayNames[weekday]} · ${idx + 1}ª ora (${DaySchedule.defaultSlotTime(idx)})',
-                    style: const TextStyle(fontSize: 17.5, fontWeight: FontWeight.w800),
+                    '${_dayNames[weekday]} · ${idx + 1}ª ora',
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
                   ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: subjCtrl,
-                    decoration: fieldDeco('Materia (es. Matematica)', icon: CupertinoIcons.book),
+                    decoration: fieldDeco('Materia', icon: CupertinoIcons.book),
                   ),
-                  if (suggestions.isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      height: 36,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: suggestions.length,
-                        separatorBuilder: (_, __) => const SizedBox(width: 6),
-                        itemBuilder: (_, i) {
-                          final s = suggestions[i];
-                          return ActionChip(
-                            label: Text(s, style: const TextStyle(fontSize: 12)),
-                            onPressed: () => setM(() => subjCtrl.text = s),
-                          );
-                        },
-                      ),
-                    ),
-                  ],
                   const SizedBox(height: 12),
                   Row(
                     children: [
@@ -3178,13 +3110,13 @@ class _HomeShellState extends State<HomeShell> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 10),
                   Wrap(
                     spacing: 8,
-                    children: [1, 2, 3].map((h) {
+                    children: [1, 2].map((h) {
                       final active = span == h;
                       return ChoiceChip(
-                        label: Text(h == 1 ? '1 ora (1 slot)' : '$h ore ($h slot)'),
+                        label: Text(h == 1 ? '1 ora' : '2 ore'),
                         selected: active,
                         onSelected: (_) => setM(() {
                           startMin = boundsOf(sIdx).$1;
@@ -3192,23 +3124,6 @@ class _HomeShellState extends State<HomeShell> {
                         }),
                       );
                     }).toList(),
-                  ),
-                  if (span > 1) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      'Occuperà automaticamente $span slot consecutivi (${fmtMin(startMin)} - ${fmtMin(endMin)}).',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF818CF8),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: roomCtrl,
-                    decoration: fieldDeco('Aula / Laboratorio (opzionale)',
-                        icon: CupertinoIcons.location),
                   ),
                   const SizedBox(height: 16),
                   Row(
@@ -3236,7 +3151,6 @@ class _HomeShellState extends State<HomeShell> {
                         child: FilledButton(
                           onPressed: () async {
                             final subj = subjCtrl.text.trim();
-                            final room = roomCtrl.text.trim();
                             final work = [...sched.slots];
 
                             for (int k = 0; k < span; k++) {
@@ -3250,7 +3164,6 @@ class _HomeShellState extends State<HomeShell> {
                                 time: customSingle
                                     ? '${fmtMin(startMin)} - ${fmtMin(endMin)}'
                                     : official,
-                                room: room,
                               );
                               while (work.length <= target) {
                                 work.add(LessonSlot(time: DaySchedule.defaultSlotTime(work.length)));
@@ -3258,18 +3171,15 @@ class _HomeShellState extends State<HomeShell> {
                               work[target] = slotVal;
                             }
 
-                            if (sIdx == idx && span < initialSpan) {
-                              for (int k = span; k < initialSpan && (idx + k) < work.length; k++) {
-                                work[idx + k] =
-                                    LessonSlot(time: DaySchedule.defaultSlotTime(idx + k));
-                              }
+                            if (sIdx == idx && span < initialSpan && (idx + 1) < work.length) {
+                              work[idx + 1] = LessonSlot(time: DaySchedule.defaultSlotTime(idx + 1));
                             }
 
                             setState(() => _timetable[weekday] = DaySchedule(slots: work));
                             await _saveTimetable();
                             if (ctx.mounted) Navigator.pop(ctx);
                           },
-                          child: Text(span > 1 ? 'Salva ($span slot)' : 'Salva Ora'),
+                          child: const Text('Salva'),
                         ),
                       ),
                     ],
@@ -3384,8 +3294,10 @@ class _HomeShellState extends State<HomeShell> {
                 Text('Nessun voto presente',
                     style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.w800, color: txt)),
                 const SizedBox(height: 6),
-                Text('Sincronizza Argo nella scheda "Argo" o premi + per inserire un voto.',
-                    textAlign: TextAlign.center, style: TextStyle(color: muted)),
+                Text(
+                    'Sincronizza Argo nella scheda "Impostazioni" o premi + per inserire un voto.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: muted)),
               ],
             ),
           )
@@ -3450,55 +3362,16 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   // --------------------------------------------------------------------------
-  // MODALI NOTIFICHE, CREA / MODIFICA EVENTO (CON PROMEMORIA CUSTOM) E NUOVO VOTO
+  // MODALI CREA / MODIFICA EVENTO (SENZA MATEMATICA DEFAULT, SENZA NOTE, SENZA ALTA PRIORITÀ)
   // --------------------------------------------------------------------------
-
-  void _showNotificationSheet() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: widget.isDark ? VibePalette.darkCard : VibePalette.lightCard,
-      shape:
-          const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.all(22),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Notifiche & Orario Mattutino',
-                style: TextStyle(fontSize: 18.5, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 8),
-            const Text(
-              'Ogni mattina alle 07:20 ricevi una notifica per controllare l\'orario del giorno sull\'app. '
-              'Inoltre ogni singolo impegno ha il proprio orario di notifica personalizzabile.',
-            ),
-            const SizedBox(height: 14),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: () async {
-                  await NotificationService.instance.sendTestNotification();
-                  if (ctx.mounted) Navigator.pop(ctx);
-                },
-                icon: const Icon(CupertinoIcons.bell_fill, size: 18),
-                label: const Text('Invia Notifica di Prova'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   void _showEventModal({DateTime? baseDate, SchoolEvent? existing}) {
     final isEdit = existing != null;
-    final subjCtrl = TextEditingController(text: existing?.subject ?? 'Matematica');
+    final subjCtrl = TextEditingController(text: existing?.subject ?? '');
     final titleCtrl = TextEditingController(text: existing?.title ?? '');
-    final notesCtrl = TextEditingController(text: existing?.notes ?? '');
     var cat = existing?.category ?? EventCategory.verifica;
     final startDay = baseDate ?? DateTime.now();
     var dt = existing?.dateTime ?? DateTime(startDay.year, startDay.month, startDay.day, 8, 15);
-    var prio = existing?.highPriority ?? true;
     var remMode = existing?.reminderMode ?? EventReminderMode.defaultBoth;
     DateTime customRem = existing?.customReminderAt ??
         DateTime(dt.year, dt.month, dt.day, 17, 0).subtract(const Duration(days: 1));
@@ -3528,10 +3401,7 @@ class _HomeShellState extends State<HomeShell> {
                       .map((c) => ChoiceChip(
                             label: Text(c.label),
                             selected: cat == c,
-                            onSelected: (_) => setM(() {
-                              cat = c;
-                              prio = c.isHighPriorityDefault;
-                            }),
+                            onSelected: (_) => setM(() => cat = c),
                           ))
                       .toList(),
                 ),
@@ -3539,8 +3409,6 @@ class _HomeShellState extends State<HomeShell> {
                 TextField(controller: subjCtrl, decoration: fieldDeco('Materia')),
                 const SizedBox(height: 10),
                 TextField(controller: titleCtrl, decoration: fieldDeco('Argomento / Titolo')),
-                const SizedBox(height: 10),
-                TextField(controller: notesCtrl, decoration: fieldDeco('Note (opzionale)')),
                 const SizedBox(height: 10),
                 Row(
                   children: [
@@ -3642,12 +3510,7 @@ class _HomeShellState extends State<HomeShell> {
                     ],
                   ),
                 ],
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Segna come alta priorità'),
-                  value: prio,
-                  onChanged: (v) => setM(() => prio = v),
-                ),
+                const SizedBox(height: 16),
                 Row(
                   children: [
                     if (isEdit) ...[
@@ -3678,10 +3541,8 @@ class _HomeShellState extends State<HomeShell> {
                                 _events[idx] = existing.copyWith(
                                   title: t,
                                   subject: s,
-                                  notes: notesCtrl.text.trim(),
                                   dateTime: dt,
                                   category: cat,
-                                  highPriority: prio,
                                   editedByUser: true,
                                   reminderMode: remMode,
                                   customReminderAt:
@@ -3693,10 +3554,8 @@ class _HomeShellState extends State<HomeShell> {
                                 id: 'm_${DateTime.now().millisecondsSinceEpoch}',
                                 title: t,
                                 subject: s,
-                                notes: notesCtrl.text.trim(),
                                 dateTime: dt,
                                 category: cat,
-                                highPriority: prio,
                                 reminderMode: remMode,
                                 customReminderAt:
                                     remMode == EventReminderMode.custom ? customRem : null,
@@ -3722,7 +3581,7 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   void _showAddGradeModal() {
-    final subjCtrl = TextEditingController(text: 'Matematica');
+    final subjCtrl = TextEditingController();
     final descCtrl = TextEditingController();
     double val = 7.0;
     double weight = 1.0;
@@ -3803,21 +3662,22 @@ class _HomeShellState extends State<HomeShell> {
 }
 
 // ============================================================================
-// TAB 4: LOGIN REGISTRO ARGO & IMPOSTAZIONI
+// TAB 4: IMPOSTAZIONI (GESTIONE NOTIFICHE + SINCRONIZZAZIONE ARGO SEPARATE)
 // ============================================================================
 
-class _ArgoSettingsTab extends StatefulWidget {
+class _SettingsTab extends StatefulWidget {
   final bool isDark;
   final Color cardColor, borderColor;
   final ArgoCredentials creds;
-  final bool syncing, notifyOn;
+  final bool syncing, notifyOn, morningNotifyOn;
   final String? lastError;
   final Future<void> Function(String s, String u, String p) onSync;
   final Future<void> Function(String s, String u, String p) onDemo;
   final ValueChanged<bool> onToggleNotify;
+  final ValueChanged<bool> onToggleMorningNotify;
   final VoidCallback onReset;
 
-  const _ArgoSettingsTab({
+  const _SettingsTab({
     required this.isDark,
     required this.cardColor,
     required this.borderColor,
@@ -3825,17 +3685,19 @@ class _ArgoSettingsTab extends StatefulWidget {
     required this.syncing,
     required this.lastError,
     required this.notifyOn,
+    required this.morningNotifyOn,
     required this.onSync,
     required this.onDemo,
     required this.onToggleNotify,
+    required this.onToggleMorningNotify,
     required this.onReset,
   });
 
   @override
-  State<_ArgoSettingsTab> createState() => _ArgoSettingsTabState();
+  State<_SettingsTab> createState() => _SettingsTabState();
 }
 
-class _ArgoSettingsTabState extends State<_ArgoSettingsTab> {
+class _SettingsTabState extends State<_SettingsTab> {
   late final _schoolCtrl = TextEditingController(text: widget.creds.schoolCode);
   late final _userCtrl = TextEditingController(text: widget.creds.username);
   late final _passCtrl = TextEditingController(text: widget.creds.password);
@@ -3858,14 +3720,72 @@ class _ArgoSettingsTabState extends State<_ArgoSettingsTab> {
       physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 40),
       children: [
+        Text('Impostazioni',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: txt)),
+        const SizedBox(height: 14),
+
+        // 1) SEZIONE GESTIONE NOTIFICHE
         Container(
           padding: const EdgeInsets.all(20),
           decoration: cardDeco(widget.cardColor, widget.borderColor),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Login Registro Elettronico Argo',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: txt)),
+              Row(
+                children: [
+                  const Icon(CupertinoIcons.bell_fill, color: VibePalette.capBlue, size: 20),
+                  const SizedBox(width: 8),
+                  Text('Gestione Notifiche',
+                      style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: txt)),
+                ],
+              ),
+              const SizedBox(height: 8),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Notifiche impegni ed eventi'),
+                subtitle: const Text('Ricevi i promemoria impostati sui tuoi impegni'),
+                value: widget.notifyOn,
+                onChanged: widget.onToggleNotify,
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Notifica orario ogni mattina alle 07:20'),
+                subtitle: const Text('Ti ricorda di controllare l\'orario della giornata'),
+                value: widget.morningNotifyOn,
+                onChanged: widget.onToggleMorningNotify,
+              ),
+              const SizedBox(height: 6),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => NotificationService.instance.sendTestNotification(),
+                  icon: const Icon(CupertinoIcons.bell, size: 17),
+                  label: const Text('Invia notifica di prova'),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // 2) SEZIONE SINCRONIZZAZIONE REGISTRO ARGO
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: cardDeco(widget.cardColor, widget.borderColor),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(CupertinoIcons.cloud_download_fill,
+                      color: VibePalette.primary, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text('Sincronizzazione Registro Argo',
+                        style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: txt)),
+                  ),
+                ],
+              ),
               const SizedBox(height: 4),
               Text(
                 widget.creds.lastSync != null
@@ -3968,32 +3888,17 @@ class _ArgoSettingsTabState extends State<_ArgoSettingsTab> {
           ),
         ),
         const SizedBox(height: 16),
+
+        // 3) PULIZIA DATI OFFLINE
         Container(
-          padding: const EdgeInsets.all(18),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
           decoration: cardDeco(widget.cardColor, widget.borderColor),
-          child: Column(
-            children: [
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Notifiche attive (Orario 07:20 + Impegni)'),
-                subtitle: const Text('Avviso orario ogni mattina alle 07:20 e promemoria eventi'),
-                value: widget.notifyOn,
-                onChanged: widget.onToggleNotify,
-              ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(CupertinoIcons.bell_circle, color: VibePalette.primary),
-                title: const Text('Invia notifica di prova'),
-                onTap: () => NotificationService.instance.sendTestNotification(),
-              ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(CupertinoIcons.trash_circle, color: VibePalette.verificaRed),
-                title: const Text('Cancella eventi e voti salvati offline'),
-                subtitle: const Text('Il tuo orario scolastico viene mantenuto'),
-                onTap: widget.onReset,
-              ),
-            ],
+          child: ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(CupertinoIcons.trash_circle, color: VibePalette.verificaRed),
+            title: const Text('Cancella eventi e voti salvati offline'),
+            subtitle: const Text('Il tuo orario scolastico viene mantenuto'),
+            onTap: widget.onReset,
           ),
         ),
       ],
