@@ -42,6 +42,25 @@ InputDecoration fieldDeco(String label, {IconData? icon, Widget? suffix}) =>
       border: const OutlineInputBorder(),
     );
 
+String fmtMin(int totalMinutes) {
+  final m = totalMinutes.clamp(0, 23 * 60 + 59);
+  final hh = (m ~/ 60).toString().padLeft(2, '0');
+  final mm = (m % 60).toString().padLeft(2, '0');
+  return '$hh:$mm';
+}
+
+(int, int)? parseSlotMinutes(String raw) {
+  final reg = RegExp(r'(\d{1,2})(?::(\d{2}))?\s*[-–/]\s*(\d{1,2})(?::(\d{2}))?');
+  final m = reg.firstMatch(raw);
+  if (m == null) return null;
+  final h1 = int.tryParse(m.group(1) ?? '');
+  final m1 = int.tryParse(m.group(2) ?? '0') ?? 0;
+  final h2 = int.tryParse(m.group(3) ?? '');
+  final m2 = int.tryParse(m.group(4) ?? '0') ?? 0;
+  if (h1 == null || h2 == null) return null;
+  return (h1 * 60 + m1, h2 * 60 + m2);
+}
+
 Color subjectAccent(String subject) {
   const palette = [
     Color(0xFF3D85C6),
@@ -109,7 +128,7 @@ class VibePalette {
 }
 
 // ============================================================================
-// MODELLI DATI (EVENTI SENZA COMPITI, VOTI, ORARIO SCOLASTICO, ARGO)
+// MODELLI DATI (EVENTI SENZA EMOJI NELLE CATEGORIE, PROMEMORIA CUSTOM, ORARIO LUN-VEN)
 // ============================================================================
 
 enum EventCategory { verifica, interrogazione, altro }
@@ -119,18 +138,6 @@ extension EventCategoryX on EventCategory {
         EventCategory.verifica: 'Verifica',
         EventCategory.interrogazione: 'Interrogazione',
         EventCategory.altro: 'Altro',
-      }[this]!;
-
-  String get chipEmoji => const {
-        EventCategory.verifica: '📝',
-        EventCategory.interrogazione: '🎤',
-        EventCategory.altro: '✨',
-      }[this]!;
-
-  String get badgeDot => const {
-        EventCategory.verifica: '🔴',
-        EventCategory.interrogazione: '🟡',
-        EventCategory.altro: '🟣',
       }[this]!;
 
   Color get color => const {
@@ -143,11 +150,52 @@ extension EventCategoryX on EventCategory {
       this == EventCategory.verifica || this == EventCategory.interrogazione;
 }
 
+enum EventReminderMode {
+  defaultBoth,
+  dayBefore17,
+  twoDaysBefore17,
+  morningOf,
+  hourBefore,
+  custom,
+  none,
+}
+
+extension EventReminderModeX on EventReminderMode {
+  String get key => const {
+        EventReminderMode.defaultBoth: 'default_both',
+        EventReminderMode.dayBefore17: 'day_before_17',
+        EventReminderMode.twoDaysBefore17: 'two_days_17',
+        EventReminderMode.morningOf: 'morning_0715',
+        EventReminderMode.hourBefore: 'hour_before',
+        EventReminderMode.custom: 'custom',
+        EventReminderMode.none: 'none',
+      }[this]!;
+
+  String get label => const {
+        EventReminderMode.defaultBoth: 'Giorno prima (17:00) + Mattina (07:15)',
+        EventReminderMode.dayBefore17: 'Giorno prima alle 17:00',
+        EventReminderMode.twoDaysBefore17: '2 giorni prima alle 17:00',
+        EventReminderMode.morningOf: 'Mattina stessa alle 07:15',
+        EventReminderMode.hourBefore: '1 ora prima dell\'evento',
+        EventReminderMode.custom: 'Data e ora personalizzata',
+        EventReminderMode.none: 'Nessuna notifica',
+      }[this]!;
+
+  static EventReminderMode fromKey(String? raw, {required bool fallbackActive}) {
+    for (final m in EventReminderMode.values) {
+      if (m.key == raw) return m;
+    }
+    return fallbackActive ? EventReminderMode.defaultBoth : EventReminderMode.none;
+  }
+}
+
 class SchoolEvent {
   final String id, title, subject, notes;
   final DateTime dateTime;
   final EventCategory category;
   final bool highPriority, completed, fromArgo, editedByUser;
+  final EventReminderMode reminderMode;
+  final DateTime? customReminderAt;
 
   const SchoolEvent({
     required this.id,
@@ -160,6 +208,8 @@ class SchoolEvent {
     this.completed = false,
     this.fromArgo = false,
     this.editedByUser = false,
+    this.reminderMode = EventReminderMode.defaultBoth,
+    this.customReminderAt,
   });
 
   SchoolEvent copyWith({
@@ -171,6 +221,8 @@ class SchoolEvent {
     bool? highPriority,
     bool? completed,
     bool? editedByUser,
+    EventReminderMode? reminderMode,
+    DateTime? customReminderAt,
   }) =>
       SchoolEvent(
         id: id,
@@ -183,7 +235,29 @@ class SchoolEvent {
         completed: completed ?? this.completed,
         fromArgo: fromArgo,
         editedByUser: editedByUser ?? this.editedByUser,
+        reminderMode: reminderMode ?? this.reminderMode,
+        customReminderAt: customReminderAt ?? this.customReminderAt,
       );
+
+  String reminderSummary() {
+    switch (reminderMode) {
+      case EventReminderMode.defaultBoth:
+        return 'Notifica: giorno prima 17:00 + 07:15';
+      case EventReminderMode.dayBefore17:
+        return 'Notifica: giorno prima 17:00';
+      case EventReminderMode.twoDaysBefore17:
+        return 'Notifica: 2 giorni prima 17:00';
+      case EventReminderMode.morningOf:
+        return 'Notifica: mattina 07:15';
+      case EventReminderMode.hourBefore:
+        return 'Notifica: 1 ora prima';
+      case EventReminderMode.custom:
+        if (customReminderAt == null) return 'Notifica personalizzata';
+        return 'Notifica: ${DateFormat('dd/MM HH:mm').format(customReminderAt!)}';
+      case EventReminderMode.none:
+        return 'Nessuna notifica';
+    }
+  }
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -196,6 +270,8 @@ class SchoolEvent {
         'completed': completed,
         'fromArgo': fromArgo,
         'editedByUser': editedByUser,
+        'reminderMode': reminderMode.key,
+        if (customReminderAt != null) 'customReminderAt': customReminderAt!.toIso8601String(),
       };
 
   factory SchoolEvent.fromJson(Map<String, dynamic> j) {
@@ -203,6 +279,12 @@ class SchoolEvent {
       (e) => e.name == '${j['category'] ?? 'altro'}',
       orElse: () => EventCategory.altro,
     );
+    final prio = j['highPriority'] as bool? ?? cat.isHighPriorityDefault;
+    final rem = EventReminderModeX.fromKey(
+      j['reminderMode'] as String?,
+      fallbackActive: prio || cat.isHighPriorityDefault,
+    );
+    final customRaw = j['customReminderAt'] as String?;
     return SchoolEvent(
       id: '${j['id'] ?? ''}',
       title: '${j['title'] ?? ''}',
@@ -210,10 +292,12 @@ class SchoolEvent {
       notes: '${j['notes'] ?? ''}',
       dateTime: DateTime.tryParse('${j['dateTime'] ?? ''}') ?? DateTime.now(),
       category: cat,
-      highPriority: j['highPriority'] as bool? ?? cat.isHighPriorityDefault,
+      highPriority: prio,
       completed: j['completed'] as bool? ?? false,
       fromArgo: j['fromArgo'] as bool? ?? false,
       editedByUser: j['editedByUser'] as bool? ?? false,
+      reminderMode: rem,
+      customReminderAt: customRaw != null ? DateTime.tryParse(customRaw) : null,
     );
   }
 }
@@ -262,6 +346,18 @@ class LessonSlot {
   final String subject, time, room;
   const LessonSlot({this.subject = '', this.time = '', this.room = ''});
 
+  int startMinutes(int fallbackHour) =>
+      parseSlotMinutes(time)?.$1 ?? (fallbackHour * 60);
+
+  int endMinutes(int fallbackHour) =>
+      parseSlotMinutes(time)?.$2 ?? ((fallbackHour + 1) * 60);
+
+  bool isAfter1300(bool inAfternoonList) {
+    if (inAfternoonList) return true;
+    final parsed = parseSlotMinutes(time);
+    return parsed != null && parsed.$1 >= 13 * 60;
+  }
+
   LessonSlot copyWith({String? subject, String? time, String? room}) => LessonSlot(
         subject: subject ?? this.subject,
         time: time ?? this.time,
@@ -289,11 +385,8 @@ class DaySchedule {
   static String defaultAfternoonTime(int idx) =>
       '${(14 + idx).toString().padLeft(2, '0')}:00 - ${(15 + idx).toString().padLeft(2, '0')}:00';
 
-  factory DaySchedule.initial(int weekday) => DaySchedule(
-        morning: List.generate(
-          weekday == 6 ? 4 : 5,
-          (i) => LessonSlot(time: defaultMorningTime(i)),
-        ),
+  factory DaySchedule.initial() => DaySchedule(
+        morning: List.generate(5, (i) => LessonSlot(time: defaultMorningTime(i))),
         afternoon: const [],
       );
 
@@ -302,7 +395,7 @@ class DaySchedule {
         'afternoon': afternoon.map((e) => e.toJson()).toList(),
       };
 
-  factory DaySchedule.fromJson(Map<String, dynamic> j, int weekday) {
+  factory DaySchedule.fromJson(Map<String, dynamic> j) {
     final m = (j['morning'] as List?)
         ?.map((x) => LessonSlot.fromJson(x as Map<String, dynamic>))
         .toList();
@@ -310,14 +403,14 @@ class DaySchedule {
         ?.map((x) => LessonSlot.fromJson(x as Map<String, dynamic>))
         .toList();
     return DaySchedule(
-      morning: m ?? DaySchedule.initial(weekday).morning,
+      morning: m ?? DaySchedule.initial().morning,
       afternoon: a ?? const [],
     );
   }
 }
 
 class ArgoCredentials {
-  final String schoolCode, username, password, studentName;
+  final String schoolCode, username, password, studentName, refreshToken;
   final DateTime? lastSync;
 
   const ArgoCredentials({
@@ -325,12 +418,13 @@ class ArgoCredentials {
     this.username = '',
     this.password = '',
     this.studentName = '',
+    this.refreshToken = '',
     this.lastSync,
   });
 }
 
 // ============================================================================
-// STORAGE OFFLINE & NOTIFICHE LOCALI
+// STORAGE OFFLINE & NOTIFICHE (07:20 GIORNALIERA + PERSONALIZZATE PER EVENTO)
 // ============================================================================
 
 class StorageService {
@@ -344,6 +438,7 @@ class StorageService {
   static const _kUser = 'sv_argo_user';
   static const _kPass = 'sv_argo_pass';
   static const _kStudent = 'sv_argo_student';
+  static const _kRefresh = 'sv_argo_refresh';
   static const _kSync = 'sv_argo_sync';
 
   final SharedPreferences _p;
@@ -370,7 +465,6 @@ class StorageService {
       for (final item in (jsonDecode(raw) as List)) {
         if (item is! Map<String, dynamic>) continue;
         final id = '${item['id'] ?? ''}';
-        // Ignora e ripulisce qualsiasi vecchio compito salvato in precedenza
         if (item['category'] == 'compito' ||
             id.startsWith('argo_c_') ||
             id.startsWith('sn_c_') ||
@@ -403,15 +497,16 @@ class StorageService {
   Future<void> saveGrades(List<SchoolGrade> list) =>
       _p.setString(_kGrades, jsonEncode(list.map((g) => g.toJson()).toList()));
 
+  // Solo Lunedì (1) – Venerdì (5): Sabato rimosso
   Map<int, DaySchedule> loadTimetable() {
     final raw = _p.getString(_kTimetable);
-    final out = {for (int d = 1; d <= 6; d++) d: DaySchedule.initial(d)};
+    final out = {for (int d = 1; d <= 5; d++) d: DaySchedule.initial()};
     if (raw == null || raw.isEmpty) return out;
     try {
       final map = jsonDecode(raw) as Map<String, dynamic>;
-      for (int d = 1; d <= 6; d++) {
+      for (int d = 1; d <= 5; d++) {
         final v = map['$d'];
-        if (v is Map<String, dynamic>) out[d] = DaySchedule.fromJson(v, d);
+        if (v is Map<String, dynamic>) out[d] = DaySchedule.fromJson(v);
       }
     } catch (_) {}
     return out;
@@ -419,7 +514,10 @@ class StorageService {
 
   Future<void> saveTimetable(Map<int, DaySchedule> map) => _p.setString(
         _kTimetable,
-        jsonEncode({for (final e in map.entries) '${e.key}': e.value.toJson()}),
+        jsonEncode({
+          for (final e in map.entries)
+            if (e.key >= 1 && e.key <= 5) '${e.key}': e.value.toJson(),
+        }),
       );
 
   ArgoCredentials loadArgo() {
@@ -429,6 +527,7 @@ class StorageService {
       username: _p.getString(_kUser) ?? '',
       password: _p.getString(_kPass) ?? '',
       studentName: _p.getString(_kStudent) ?? '',
+      refreshToken: _p.getString(_kRefresh) ?? '',
       lastSync: s != null ? DateTime.tryParse(s) : null,
     );
   }
@@ -438,11 +537,12 @@ class StorageService {
     await _p.setString(_kUser, c.username.trim());
     await _p.setString(_kPass, c.password);
     await _p.setString(_kStudent, c.studentName);
+    await _p.setString(_kRefresh, c.refreshToken);
     if (c.lastSync != null) await _p.setString(_kSync, c.lastSync!.toIso8601String());
   }
 
   Future<void> clearAll() async {
-    for (final k in [_kEvents, _kGrades, _kDeletedArgo, _kStudent, _kSync]) {
+    for (final k in [_kEvents, _kGrades, _kDeletedArgo, _kStudent, _kRefresh, _kSync]) {
       await _p.remove(k);
     }
   }
@@ -451,6 +551,8 @@ class StorageService {
 class NotificationService {
   NotificationService._();
   static final NotificationService instance = NotificationService._();
+
+  static const int _dailyTimetableId = 990720;
 
   final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
   bool _ready = false;
@@ -465,9 +567,9 @@ class NotificationService {
       await _plugin.initialize(const InitializationSettings(
         android: AndroidInitializationSettings('@mipmap/ic_launcher'),
       ));
-      await _plugin
-          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-          ?.requestNotificationsPermission();
+      final androidPlugin =
+          _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      await androidPlugin?.requestNotificationsPermission();
       _ready = true;
     } catch (_) {}
   }
@@ -475,8 +577,8 @@ class NotificationService {
   NotificationDetails _details() => const NotificationDetails(
         android: AndroidNotificationDetails(
           'calendario_scuola_channel',
-          'Promemoria Verifiche & Interrogazioni',
-          channelDescription: 'Avvisi automatici per verifiche e interrogazioni',
+          'Orario & Promemoria Scolastici',
+          channelDescription: 'Notifica orario alle 07:20 e promemoria impegni personalizzati',
           importance: Importance.max,
           priority: Priority.high,
         ),
@@ -486,8 +588,8 @@ class NotificationService {
     if (!_ready) await init();
     await _plugin.show(
       999001,
-      '🎓 Calendario Scuola · Notifiche Attive!',
-      'Ti avviseremo il giorno prima (17:00) e la mattina stessa (07:15) delle tue prove.',
+      'Calendario Scuola · Notifiche attive',
+      'Riceverai il promemoria dell\'orario ogni mattina alle 07:20 e gli avvisi dei tuoi impegni.',
       _details(),
     );
   }
@@ -499,78 +601,196 @@ class NotificationService {
     } catch (_) {}
     if (!enabled) return;
 
-    final now = DateTime.now();
-    for (final ev in events) {
-      if (ev.completed || !(ev.category.isHighPriorityDefault || ev.highPriority)) continue;
-      final baseDay = DateTime(ev.dateTime.year, ev.dateTime.month, ev.dateTime.day);
-      final dayBefore = baseDay.subtract(const Duration(days: 1)).add(const Duration(hours: 17));
-      final morningOf = baseDay.add(const Duration(hours: 7, minutes: 15));
-      final baseId = (ev.id.hashCode.abs() % 800000) + 100;
+    // 1) Notifica ricorrente ogni mattina alle 07:20 per controllare l'orario sull'app
+    final nowTz = tz.TZDateTime.now(tz.local);
+    var next0720 = tz.TZDateTime(tz.local, nowTz.year, nowTz.month, nowTz.day, 7, 20);
+    if (!next0720.isAfter(nowTz)) {
+      next0720 = next0720.add(const Duration(days: 1));
+    }
+    await _scheduleTz(
+      _dailyTimetableId,
+      'Orario scolastico di oggi',
+      'Buongiorno! Apri Calendario Scuola per controllare l\'orario di oggi.',
+      next0720,
+      matchComponents: DateTimeComponents.time,
+    );
 
-      if (dayBefore.isAfter(now)) {
-        await _schedule(
-          baseId,
-          '${ev.category.badgeDot} Domani: ${ev.category.label} di ${ev.subject}',
-          '${ev.title} — Ultimo ripasso pomeridiano! 💪',
-          dayBefore,
-        );
-      }
-      if (morningOf.isAfter(now)) {
-        await _schedule(
-          baseId + 1,
-          '🔥 Oggi hai ${ev.category.label} di ${ev.subject}!',
-          '${ev.title} — In bocca al lupo! 🍀',
-          morningOf,
-        );
+    // 2) Notifiche personalizzate per ciascun evento
+    final now = DateTime.now();
+    for (int i = 0; i < events.length; i++) {
+      final ev = events[i];
+      if (ev.completed || ev.reminderMode == EventReminderMode.none) continue;
+
+      final baseDay = DateTime(ev.dateTime.year, ev.dateTime.month, ev.dateTime.day);
+      final baseId = 1000 + i * 3;
+      final titleDomani = 'Domani: ${ev.category.label} di ${ev.subject}';
+      final titleOggi = 'Oggi: ${ev.category.label} di ${ev.subject}';
+      final titleGen = '${ev.category.label} di ${ev.subject}';
+
+      switch (ev.reminderMode) {
+        case EventReminderMode.defaultBoth:
+          final d1 = baseDay.subtract(const Duration(days: 1)).add(const Duration(hours: 17));
+          final d2 = baseDay.add(const Duration(hours: 7, minutes: 15));
+          if (d1.isAfter(now)) await _scheduleDate(baseId, titleDomani, ev.title, d1);
+          if (d2.isAfter(now)) await _scheduleDate(baseId + 1, titleOggi, ev.title, d2);
+          break;
+        case EventReminderMode.dayBefore17:
+          final d1 = baseDay.subtract(const Duration(days: 1)).add(const Duration(hours: 17));
+          if (d1.isAfter(now)) await _scheduleDate(baseId, titleDomani, ev.title, d1);
+          break;
+        case EventReminderMode.twoDaysBefore17:
+          final d1 = baseDay.subtract(const Duration(days: 2)).add(const Duration(hours: 17));
+          if (d1.isAfter(now)) {
+            await _scheduleDate(baseId, 'Tra 2 giorni: $titleGen', ev.title, d1);
+          }
+          break;
+        case EventReminderMode.morningOf:
+          final d1 = baseDay.add(const Duration(hours: 7, minutes: 15));
+          if (d1.isAfter(now)) await _scheduleDate(baseId, titleOggi, ev.title, d1);
+          break;
+        case EventReminderMode.hourBefore:
+          final d1 = ev.dateTime.subtract(const Duration(hours: 1));
+          if (d1.isAfter(now)) {
+            await _scheduleDate(baseId, 'Tra 1 ora: $titleGen', ev.title, d1);
+          }
+          break;
+        case EventReminderMode.custom:
+          final custom = ev.customReminderAt;
+          if (custom != null && custom.isAfter(now)) {
+            await _scheduleDate(baseId, 'Promemoria: $titleGen', ev.title, custom);
+          }
+          break;
+        case EventReminderMode.none:
+          break;
       }
     }
   }
 
-  Future<void> _schedule(int id, String title, String body, DateTime when) async {
+  Future<void> _scheduleDate(int id, String title, String body, DateTime when) =>
+      _scheduleTz(id, title, body, tz.TZDateTime.from(when, tz.local));
+
+  Future<void> _scheduleTz(
+    int id,
+    String title,
+    String body,
+    tz.TZDateTime when, {
+    DateTimeComponents? matchComponents,
+  }) async {
     try {
       await _plugin.zonedSchedule(
         id,
         title,
         body,
-        tz.TZDateTime.from(when, tz.local),
+        when,
         _details(),
         uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
-        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        matchDateTimeComponents: matchComponents,
       );
-    } catch (_) {}
+    } catch (_) {
+      try {
+        await _plugin.zonedSchedule(
+          id,
+          title,
+          body,
+          when,
+          _details(),
+          uiLocalNotificationDateInterpretation:
+              UILocalNotificationDateInterpretation.absoluteTime,
+          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+          matchDateTimeComponents: matchComponents,
+        );
+      } catch (_) {}
+    }
   }
 }
 
 // ============================================================================
-// INTEGRAZIONE REGISTRO ELETTRONICO ARGO (DidUP 1.30.2+ OAuth2 PKCE)
+// INTEGRAZIONE REGISTRO ELETTRONICO ARGO (DidUP 1.30.2+ OAuth2 PKCE + CONSENSO)
 // ============================================================================
 
 class ArgoSyncResult {
   final List<SchoolEvent> events;
   final List<SchoolGrade> grades;
   final String studentName;
-  final List<String> subjects;
+  final String refreshToken;
 
   const ArgoSyncResult({
     required this.events,
     required this.grades,
     required this.studentName,
-    this.subjects = const [],
+    this.refreshToken = '',
   });
+}
+
+class _HttpStep {
+  final int status;
+  final String? location;
+  final String body;
+  const _HttpStep({required this.status, required this.location, required this.body});
+}
+
+class _ScopedCookieJar {
+  final Map<String, Map<String, String>> _byHost = {};
+
+  void storeFromResponse(Uri requestUri, HttpClientResponse res) {
+    final rawHeaders = res.headers[HttpHeaders.setCookieHeader];
+    if (rawHeaders == null) return;
+    final host = requestUri.host.toLowerCase();
+    final bucket = _byHost.putIfAbsent(host, () => <String, String>{});
+
+    for (final raw in rawHeaders) {
+      final parts = raw.split(';');
+      if (parts.isEmpty) continue;
+      final head = parts.first.trim();
+      final eq = head.indexOf('=');
+      if (eq <= 0) continue;
+      final name = head.substring(0, eq).trim();
+      final val = head.substring(eq + 1).trim();
+
+      bool remove = val.isEmpty;
+      for (final attr in parts.skip(1)) {
+        final s = attr.trim();
+        final aEq = s.indexOf('=');
+        final aKey = (aEq < 0 ? s : s.substring(0, aEq)).trim().toLowerCase();
+        final aVal = aEq < 0 ? '' : s.substring(aEq + 1).trim();
+        if (aKey == 'max-age') {
+          final ma = int.tryParse(aVal);
+          if (ma != null && ma <= 0) remove = true;
+        } else if (aKey == 'expires' && aVal.contains('1970')) {
+          remove = true;
+        }
+      }
+
+      if (remove) {
+        bucket.remove(name);
+      } else {
+        bucket[name] = val;
+      }
+    }
+  }
+
+  String? headerFor(Uri uri) {
+    final bucket = _byHost[uri.host.toLowerCase()];
+    if (bucket == null || bucket.isEmpty) return null;
+    return bucket.entries.map((e) => '${e.key}=${e.value}').join('; ');
+  }
 }
 
 class ArgoApiService {
   static const _clientId = '72fd6dea-d0ab-4bb9-8eaa-3ac24c84886c';
   static const _redirectUri = 'it.argosoft.didup.famiglia.new://login-callback';
+  static const _scopes = 'openid offline profile user.roles argo';
   static const _defaultAppVersion = '1.30.2';
   static const _dataInizioDefault = '2000-01-01 00:00:00.000';
-  static const _ua =
-      'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Mobile Safari/537.36';
+  static const _ua = 'okhttp/4.12.0';
 
-  static String _fmtArgoDate(DateTime d) =>
-      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')} '
-      '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}:${d.second.toString().padLeft(2, '0')}.'
-      '${d.millisecond.toString().padLeft(3, '0')}';
+  static String _fmtArgoDate(DateTime d) {
+    final u = d.toUtc();
+    return '${u.year.toString().padLeft(4, '0')}-${u.month.toString().padLeft(2, '0')}-${u.day.toString().padLeft(2, '0')} '
+        '${u.hour.toString().padLeft(2, '0')}:${u.minute.toString().padLeft(2, '0')}:${u.second.toString().padLeft(2, '0')}.'
+        '${u.millisecond.toString().padLeft(3, '0')}';
+  }
 
   static Future<String> _resolveClientVersion() async {
     try {
@@ -599,20 +819,6 @@ class ArgoApiService {
     return 0;
   }
 
-  static void _collectCookies(HttpClientResponse res, Map<String, String> jar) {
-    final rawList = res.headers[HttpHeaders.setCookieHeader];
-    if (rawList == null) return;
-    for (final h in rawList) {
-      final pair = h.split(';').first.trim();
-      final eq = pair.indexOf('=');
-      if (eq > 0) {
-        final k = pair.substring(0, eq).trim();
-        final v = pair.substring(eq + 1).trim();
-        v.isEmpty ? jar.remove(k) : jar[k] = v;
-      }
-    }
-  }
-
   static List<Map<String, dynamic>> _applyArgoOps(List<dynamic>? rawList) {
     if (rawList == null) return [];
     final deleted = <String>{
@@ -631,26 +837,180 @@ class ArgoApiService {
     return out;
   }
 
-  static Future<ArgoSyncResult> sync({
-    required String schoolCode,
-    required String username,
-    required String password,
-  }) =>
-      _syncDidUp(schoolCode.trim().toUpperCase(), username.trim(), password);
+  static String? _extractHtmlRedirectOrFormRedirect(String html, Uri baseUri) {
+    final meta = RegExp(
+      r'http-equiv=["\x27]?refresh["\x27]?[^>]*content=["\x27][^"\x27]*url=([^"\x27>\s;]+)',
+      caseSensitive: false,
+    ).firstMatch(html);
+    if (meta != null) return meta.group(1);
 
-  static Future<ArgoSyncResult> _syncDidUp(String school, String user, String pass) async {
-    final appVersion = await _resolveClientVersion();
+    final jsLoc = RegExp(
+      r'(?:window\.)?location(?:\.href)?\s*=\s*["\x27]([^"\x27]+)["\x27]',
+      caseSensitive: false,
+    ).firstMatch(html);
+    if (jsLoc != null) {
+      final candidate = jsLoc.group(1) ?? '';
+      if (candidate.contains('oauth2') ||
+          candidate.contains('consent') ||
+          candidate.startsWith('it.argosoft.')) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
+  static (Uri, String)? _extractHtmlFormPost(String html, Uri currentUri) {
+    final formMatch = RegExp(
+      r'<form\b([^>]*)>([\s\S]*?)</form>',
+      caseSensitive: false,
+    ).firstMatch(html);
+    if (formMatch == null) return null;
+
+    final formAttrs = formMatch.group(1) ?? '';
+    final formInner = formMatch.group(2) ?? '';
+    final actionMatch =
+        RegExp(r'action=["\x27]([^"\x27]*)["\x27]', caseSensitive: false).firstMatch(formAttrs);
+    final rawAction = _unescapeHtml(actionMatch?.group(1) ?? '');
+    final actionUri = rawAction.isEmpty ? currentUri : currentUri.resolve(rawAction);
+
+    final fields = <String, List<String>>{};
+    final inputReg = RegExp(r'<input\b([^>]*)/?>', caseSensitive: false);
+    for (final m in inputReg.allMatches(formInner)) {
+      final a = m.group(1) ?? '';
+      final name = _attrVal(a, 'name');
+      if (name == null || name.isEmpty) continue;
+      final type = (_attrVal(a, 'type') ?? 'text').toLowerCase();
+      final val = _unescapeHtml(_attrVal(a, 'value') ?? '');
+      if (type == 'submit') {
+        final low = '$name $val'.toLowerCase();
+        if (low.contains('deny') ||
+            low.contains('reject') ||
+            low.contains('rifiut') ||
+            low.contains('annull')) {
+          continue;
+        }
+      }
+      if ((type == 'checkbox' || type == 'radio') &&
+          !RegExp(r'\bchecked\b', caseSensitive: false).hasMatch(a)) {
+        // Nei form OAuth di consenso le scope checkbox vanno accettate
+        if (name.toLowerCase().contains('scope') || name.toLowerCase().contains('accept')) {
+          fields.putIfAbsent(name, () => []).add(val.isEmpty ? 'true' : val);
+        }
+        continue;
+      }
+      fields.putIfAbsent(name, () => []).add(val);
+    }
+
+    final btnReg = RegExp(r'<button\b([^>]*)>', caseSensitive: false);
+    for (final m in btnReg.allMatches(formInner)) {
+      final a = m.group(1) ?? '';
+      final name = _attrVal(a, 'name');
+      final val = _unescapeHtml(_attrVal(a, 'value') ?? '');
+      if (name != null && name.isNotEmpty) {
+        final low = '$name $val'.toLowerCase();
+        if (!low.contains('deny') &&
+            !low.contains('reject') &&
+            !low.contains('rifiut') &&
+            !low.contains('annull')) {
+          fields.putIfAbsent(name, () => []).add(val.isEmpty ? 'accept' : val);
+        }
+      }
+    }
+
+    if (fields.isEmpty && currentUri.queryParameters['consent_challenge'] != null) {
+      fields['challenge'] = [currentUri.queryParameters['consent_challenge']!];
+      fields['submit'] = ['accept'];
+    }
+    if (fields.isEmpty) return null;
+
+    final encoded = <String>[
+      for (final e in fields.entries)
+        for (final v in e.value)
+          '${Uri.encodeComponent(e.key)}=${Uri.encodeComponent(v)}',
+    ].join('&');
+    return (actionUri, encoded);
+  }
+
+  static String? _attrVal(String attrs, String attrName) {
+    final m = RegExp(
+      '$attrName\\s*=\\s*["\\x27]([^"\\x27]*)["\\x27]',
+      caseSensitive: false,
+    ).firstMatch(attrs);
+    return m?.group(1);
+  }
+
+  static String _unescapeHtml(String s) => s
+      .replaceAll('&amp;', '&')
+      .replaceAll('&#38;', '&')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&#39;', "'");
+
+  static String _readableHtmlHint(String html) {
+    final clean = html
+        .replaceAll(RegExp(r'<script[\s\S]*?</script>', caseSensitive: false), ' ')
+        .replaceAll(RegExp(r'<style[\s\S]*?</style>', caseSensitive: false), ' ')
+        .replaceAll(RegExp(r'<[^>]+>'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    final low = clean.toLowerCase();
+    if (low.contains('cambio password') || low.contains('cambiare la password')) {
+      return 'Argo richiede il cambio password al primo accesso: accedi una volta da browser su portaleargo.it e poi riprova.';
+    }
+    if (low.contains('bloccato') || low.contains('disabilitat')) {
+      return 'L\'utenza Argo risulta bloccata o disabilitata sul portale della scuola.';
+    }
+    if (clean.isEmpty) return '';
+    return clean.length > 140 ? '${clean.substring(0, 140)}...' : clean;
+  }
+
+  static Future<(String, String, DateTime)> _tryRefreshToken(String refreshToken) async {
+    final res = await http
+        .post(
+          Uri.parse('https://auth.portaleargo.it/oauth2/token'),
+          headers: {'content-type': 'application/x-www-form-urlencoded', 'user-agent': _ua},
+          body: {
+            'grant_type': 'refresh_token',
+            'refresh_token': refreshToken,
+            'client_id': _clientId,
+            'scope': _scopes,
+          },
+        )
+        .timeout(const Duration(seconds: 20));
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw 'Refresh token scaduto';
+    }
+    final j = jsonDecode(res.body) as Map<String, dynamic>;
+    final access = '${j['access_token'] ?? ''}';
+    if (access.isEmpty) throw 'Access token assente';
+    final nextRefresh = '${j['refresh_token'] ?? ''}'.trim();
+    final expSec = (j['expires_in'] as num?)?.toInt() ?? 3600;
+    return (
+      access,
+      nextRefresh.isNotEmpty ? nextRefresh : refreshToken,
+      DateTime.now().add(Duration(seconds: expSec)),
+    );
+  }
+
+  static Future<(String, String, DateTime)> _obtainFreshTokens(
+    String school,
+    String user,
+    String pass,
+  ) async {
     final verifier = _rndStr(43);
-    final challenge = base64UrlEncode(sha256.convert(utf8.encode(verifier)).bytes).replaceAll('=', '');
+    final state = _rndStr(22);
+    final nonce = _rndStr(22);
+    final challenge =
+        base64UrlEncode(sha256.convert(utf8.encode(verifier)).bytes).replaceAll('=', '');
+
     final authUri = Uri.parse(
       'https://auth.portaleargo.it/oauth2/auth'
       '?redirect_uri=${Uri.encodeComponent(_redirectUri)}'
       '&client_id=$_clientId'
       '&response_type=code'
       '&prompt=login'
-      '&state=${_rndStr(22)}'
-      '&nonce=${_rndStr(22)}'
-      '&scope=${Uri.encodeComponent('openid offline profile user.roles argo')}'
+      '&state=$state'
+      '&nonce=$nonce'
+      '&scope=${Uri.encodeComponent(_scopes)}'
       '&code_challenge=$challenge'
       '&code_challenge_method=S256',
     );
@@ -658,92 +1018,148 @@ class ArgoApiService {
     final client = HttpClient()
       ..connectionTimeout = const Duration(seconds: 25)
       ..userAgent = _ua;
-    final cookies = <String, String>{};
+    final jar = _ScopedCookieJar();
 
-    Future<HttpClientResponse> passo(
+    Future<_HttpStep> passo(
       String method,
       Uri uri, {
       String? formBody,
-      bool sendCookies = false,
+      bool sendHostCookies = true,
     }) async {
       final req = await client.openUrl(method, uri);
       req.followRedirects = false;
-      if (sendCookies && cookies.isNotEmpty) {
-        req.headers.set(
-          HttpHeaders.cookieHeader,
-          cookies.entries.map((e) => '${e.key}=${e.value}').join('; '),
-        );
+      req.headers.set(
+        HttpHeaders.acceptHeader,
+        'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      );
+      if (sendHostCookies) {
+        final cookieHdr = jar.headerFor(uri);
+        if (cookieHdr != null && cookieHdr.isNotEmpty) {
+          req.headers.set(HttpHeaders.cookieHeader, cookieHdr);
+        }
       }
       if (formBody != null) {
         final bytes = utf8.encode(formBody);
-        req.headers.set(HttpHeaders.contentTypeHeader, 'application/x-www-form-urlencoded');
+        req.headers.set(
+          HttpHeaders.contentTypeHeader,
+          'application/x-www-form-urlencoded',
+        );
         req.contentLength = bytes.length;
         req.add(bytes);
       }
       final res = await req.close().timeout(const Duration(seconds: 25));
-      await res.drain<void>();
-      return res;
+      jar.storeFromResponse(uri, res);
+      final bodyBytes = await res.fold<List<int>>(<int>[], (acc, chunk) => acc..addAll(chunk));
+      final bodyStr = utf8.decode(bodyBytes, allowMalformed: true);
+      return _HttpStep(
+        status: res.statusCode,
+        location: res.headers.value(HttpHeaders.locationHeader),
+        body: bodyStr,
+      );
     }
 
     try {
-      final r0 = await passo('GET', authUri);
-      _collectCookies(r0, cookies);
-      final loc0 = r0.headers.value(HttpHeaders.locationHeader);
-      if (loc0 == null) throw 'Connessione OAuth Argo non riuscita (HTTP ${r0.statusCode}).';
-      final loginChallenge = authUri.resolve(loc0).queryParameters['login_challenge'];
+      final r0 = await passo('GET', authUri, sendHostCookies: false);
+      if (r0.location == null) {
+        throw 'Connessione OAuth Argo non riuscita (HTTP ${r0.status}).';
+      }
+      final loginUri = authUri.resolve(r0.location!);
+      final loginChallenge = loginUri.queryParameters['login_challenge'];
       if (loginChallenge == null || loginChallenge.isEmpty) {
         throw 'Parametro login_challenge non ricevuto da Argo.';
       }
 
       final ssoUri = Uri.parse('https://www.portaleargo.it/auth/sso/login');
-      final body = [
-        'challenge=${Uri.encodeQueryComponent(loginChallenge)}',
-        'client_id=${Uri.encodeQueryComponent(_clientId)}',
+      final formBody = [
+        'challenge=${Uri.encodeComponent(loginChallenge)}',
+        'client_id=${Uri.encodeComponent(_clientId)}',
         'prefill=false',
-        'famiglia_customer_code=${Uri.encodeQueryComponent(school)}',
-        'username=${Uri.encodeQueryComponent(user)}',
-        'password=${Uri.encodeQueryComponent(pass)}',
+        'famiglia_customer_code=${Uri.encodeComponent(school)}',
+        'username=${Uri.encodeComponent(user)}',
+        'password=${Uri.encodeComponent(pass)}',
         'login=true',
       ].join('&');
 
-      final r1 = await passo('POST', ssoUri, formBody: body);
-      final loc1 = r1.headers.value(HttpHeaders.locationHeader);
-      if (loc1 == null || loc1.contains('/auth/sso/login')) {
-        throw 'Credenziali errate: verifica Codice Scuola ($school), Nome Utente e Password.';
+      final r1 = await passo('POST', ssoUri, formBody: formBody, sendHostCookies: true);
+      final loc1 = r1.location;
+      if (loc1 == null ||
+          loc1.contains('/auth/sso/login') ||
+          loc1.contains('login_error') ||
+          loc1.contains('error=')) {
+        final hint = _readableHtmlHint(r1.body);
+        if (hint.contains('cambio password') || hint.contains('bloccata')) throw hint;
+        throw 'Credenziali non valide: controlla Codice Scuola ($school), Nome Utente e Password.';
       }
 
-      final url1 = ssoUri.resolve(loc1);
-      final r2 = await passo('GET', url1, sendCookies: true);
-      _collectCookies(r2, cookies);
-      final loc2 = r2.headers.value(HttpHeaders.locationHeader);
-      if (loc2 == null) {
-        throw 'Login SSO interrotto: controlla le credenziali o eventuale cambio password su Argo.';
-      }
+      String? callbackUrl;
+      Uri currentBase = ssoUri;
+      String nextLocation = loc1;
 
-      String callbackUrl;
-      if (loc2.startsWith('it.argosoft.didup.famiglia.new://')) {
-        callbackUrl = loc2;
-      } else {
-        final url2 = url1.resolve(loc2);
-        final r3 = await passo('GET', url2);
-        final loc3 = r3.headers.value(HttpHeaders.locationHeader);
-        if (loc3 == null) throw 'Catena OAuth interrotta durante il consenso Argo.';
-        if (loc3.startsWith('it.argosoft.didup.famiglia.new://')) {
-          callbackUrl = loc3;
-        } else {
-          final url3 = url2.resolve(loc3);
-          final r4 = await passo('GET', url3, sendCookies: true);
-          final loc4 = r4.headers.value(HttpHeaders.locationHeader);
-          if (loc4 == null) throw 'Redirect finale OAuth mancante da Argo.';
-          callbackUrl = loc4;
+      for (int hop = 0; hop < 10; hop++) {
+        if (nextLocation.startsWith('it.argosoft.didup.famiglia.new://')) {
+          callbackUrl = nextLocation;
+          break;
         }
+        final targetUri = currentBase.resolve(nextLocation);
+        if (targetUri.scheme == 'it.argosoft.didup.famiglia.new') {
+          callbackUrl = targetUri.toString();
+          break;
+        }
+
+        var step = await passo('GET', targetUri, sendHostCookies: true);
+        String? loc = step.location;
+
+        // Gestione avanzata pagina di consenso / redirect HTML su portaleargo.it
+        if (loc == null) {
+          loc = _extractHtmlRedirectOrFormRedirect(step.body, targetUri);
+        }
+        if (loc == null) {
+          final formPost = _extractHtmlFormPost(step.body, targetUri);
+          if (formPost != null) {
+            final postRes = await passo(
+              'POST',
+              formPost.$1,
+              formBody: formPost.$2,
+              sendHostCookies: true,
+            );
+            currentBase = formPost.$1;
+            loc = postRes.location ?? _extractHtmlRedirectOrFormRedirect(postRes.body, formPost.$1);
+            step = postRes;
+          } else {
+            currentBase = targetUri;
+          }
+        } else {
+          currentBase = targetUri;
+        }
+
+        // Fallback senza cookie se il nodo SSO non si aspettava cookie sullo step intermedio
+        if (loc == null && targetUri.host.contains('portaleargo.it')) {
+          final retryNoCookie = await passo('GET', targetUri, sendHostCookies: false);
+          if (retryNoCookie.location != null) {
+            currentBase = targetUri;
+            loc = retryNoCookie.location;
+          }
+        }
+
+        if (loc == null) {
+          final hint = _readableHtmlHint(step.body);
+          throw hint.isNotEmpty
+              ? 'Accesso Argo interrotto su ${targetUri.path} (HTTP ${step.status}): $hint'
+              : 'Accesso Argo interrotto su ${targetUri.host}${targetUri.path} (HTTP ${step.status}).';
+        }
+        nextLocation = loc;
       }
 
-      final authCode = Uri.parse(callbackUrl).queryParameters['code'];
+      if (callbackUrl == null) {
+        throw 'Catena di login Argo troppo lunga o non completata.';
+      }
+
+      final cbUri = Uri.parse(callbackUrl);
+      final authCode = cbUri.queryParameters['code'];
       if (authCode == null || authCode.isEmpty) {
-        final err = Uri.parse(callbackUrl).queryParameters['error_description'] ??
-            Uri.parse(callbackUrl).queryParameters['error'] ??
-            'codice assente';
+        final err = cbUri.queryParameters['error_description'] ??
+            cbUri.queryParameters['error'] ??
+            'codice OAuth assente';
         throw 'Autorizzazione Argo rifiutata ($err).';
       }
 
@@ -766,25 +1182,87 @@ class ArgoApiService {
         throw 'Token OAuth non ottenuto: ${tokJson['error_description'] ?? tokRes.statusCode}';
       }
       final bearer = '${tokJson['access_token']}';
-      final expStr = _fmtArgoDate(
-        DateTime.now().add(Duration(seconds: (tokJson['expires_in'] as num?)?.toInt() ?? 3600)),
+      final refresh = '${tokJson['refresh_token'] ?? ''}';
+      final expAt = DateTime.now().add(
+        Duration(seconds: (tokJson['expires_in'] as num?)?.toInt() ?? 3600),
       );
+      return (bearer, refresh, expAt);
+    } finally {
+      client.close(force: true);
+    }
+  }
 
-      Map<String, String> didupHeaders([String? xToken, String? codMin]) => {
-            'accept': 'application/json',
-            'argo-client-version': appVersion,
-            'content-type': 'application/json; charset=utf-8',
-            'authorization': 'Bearer $bearer',
-            'x-date-exp-auth': expStr,
-            'user-agent': _ua,
-            if (xToken != null) 'x-auth-token': xToken,
-            if (codMin != null) 'x-cod-min': codMin,
-          };
+  static Future<ArgoSyncResult> sync({
+    required String schoolCode,
+    required String username,
+    required String password,
+    String savedRefreshToken = '',
+  }) async {
+    final school = schoolCode.trim().toUpperCase();
+    final user = username.trim();
+    final appVersion = await _resolveClientVersion();
 
-      final loginRes = await http
+    String bearer;
+    String refreshToken;
+    DateTime expAt;
+
+    if (savedRefreshToken.isNotEmpty) {
+      try {
+        final r = await _tryRefreshToken(savedRefreshToken);
+        bearer = r.$1;
+        refreshToken = r.$2;
+        expAt = r.$3;
+      } catch (_) {
+        final r = await _obtainFreshTokens(school, user, password);
+        bearer = r.$1;
+        refreshToken = r.$2;
+        expAt = r.$3;
+      }
+    } else {
+      final r = await _obtainFreshTokens(school, user, password);
+      bearer = r.$1;
+      refreshToken = r.$2;
+      expAt = r.$3;
+    }
+
+    final expStr = _fmtArgoDate(expAt);
+    Map<String, String> didupHeaders([String? xToken, String? codMin]) => {
+          'accept': 'application/json',
+          'argo-client-version': appVersion,
+          'content-type': 'application/json; charset=utf-8',
+          'authorization': 'Bearer $bearer',
+          'x-date-exp-auth': expStr,
+          'user-agent': _ua,
+          if (xToken != null) 'x-auth-token': xToken,
+          if (codMin != null) 'x-cod-min': codMin,
+        };
+
+    var loginRes = await http
+        .post(
+          Uri.parse('https://www.portaleargo.it/appfamiglia/api/rest/login'),
+          headers: didupHeaders(),
+          body: jsonEncode({
+            'lista-opzioni-notifiche': '{}',
+            'lista-x-auth-token': '[]',
+            'clientID': _rndStr(163),
+          }),
+        )
+        .timeout(const Duration(seconds: 25));
+
+    if ((loginRes.statusCode == 401 || loginRes.statusCode == 403) &&
+        savedRefreshToken.isNotEmpty) {
+      final fresh = await _obtainFreshTokens(school, user, password);
+      bearer = fresh.$1;
+      refreshToken = fresh.$2;
+      expAt = fresh.$3;
+      loginRes = await http
           .post(
             Uri.parse('https://www.portaleargo.it/appfamiglia/api/rest/login'),
-            headers: didupHeaders(),
+            headers: {
+              ...didupHeaders(),
+              'authorization': 'Bearer $bearer',
+              'x-date-exp-auth': _fmtArgoDate(expAt),
+            },
             body: jsonEncode({
               'lista-opzioni-notifiche': '{}',
               'lista-x-auth-token': '[]',
@@ -792,132 +1270,151 @@ class ArgoApiService {
             }),
           )
           .timeout(const Duration(seconds: 25));
-
-      if (loginRes.statusCode == 410) {
-        throw 'Versione DidUP ($appVersion) rifiutata dal server Argo (HTTP 410).';
-      }
-      final loginRoot = jsonDecode(loginRes.body) as Map<String, dynamic>;
-      if (loginRoot['success'] == false) {
-        throw '${loginRoot['msg'] ?? 'Login applicativo Argo non riuscito'}';
-      }
-      final profili = ((loginRoot['data'] as List?) ?? []).whereType<Map<String, dynamic>>().toList();
-      if (profili.isEmpty) throw 'Nessun profilo alunno trovato su questo account Argo.';
-
-      final attivi = profili.where((p) => p['profiloDisabilitato'] != true).toList();
-      final pool = attivi.isNotEmpty ? attivi : profili;
-      final prof = pool.firstWhere(
-        (p) => '${p['codMin'] ?? ''}'.toUpperCase() == school,
-        orElse: () => pool.first,
-      );
-
-      final xToken = '${prof['token'] ?? ''}';
-      final codMin = '${prof['codMin'] ?? school}';
-      final opzioniMap = <String, dynamic>{
-        for (final o in (prof['opzioni'] as List? ?? []))
-          if (o is Map<String, dynamic> && o['chiave'] != null) '${o['chiave']}': o['valore'],
-      };
-
-      String studentName = user;
-      try {
-        final pRes = await http
-            .get(Uri.parse('https://www.portaleargo.it/appfamiglia/api/rest/profilo'),
-                headers: didupHeaders(xToken, codMin))
-            .timeout(const Duration(seconds: 15));
-        final alunno = ((jsonDecode(pRes.body) as Map<String, dynamic>)['data'] as Map?)?['alunno'];
-        if (alunno is Map) {
-          final nom = '${alunno['nominativo'] ?? ''}'.trim();
-          if (nom.isNotEmpty) studentName = nom;
-        }
-      } catch (_) {}
-
-      final dashRes = await http
-          .post(
-            Uri.parse('https://www.portaleargo.it/appfamiglia/api/rest/dashboard/dashboard'),
-            headers: didupHeaders(xToken, codMin),
-            body: jsonEncode({
-              'dataultimoaggiornamento': _dataInizioDefault,
-              'opzioni': jsonEncode(opzioniMap),
-            }),
-          )
-          .timeout(const Duration(seconds: 30));
-
-      final dashRoot = jsonDecode(dashRes.body) as Map<String, dynamic>;
-      if (dashRoot['success'] == false) {
-        throw '${dashRoot['msg'] ?? 'Errore scaricamento dashboard Argo'}';
-      }
-      final datiList =
-          (dashRoot['data'] is Map<String, dynamic>) ? ((dashRoot['data']['dati'] as List?) ?? []) : [];
-      if (datiList.isEmpty || datiList.first is! Map<String, dynamic>) {
-        return ArgoSyncResult(events: [], grades: [], studentName: studentName);
-      }
-      final dash = datiList.first as Map<String, dynamic>;
-
-      final matByPk = <String, String>{
-        for (final m in (dash['listaMaterie'] as List? ?? []))
-          if (m is Map<String, dynamic> && m['pk'] != null)
-            '${m['pk']}': _cleanSubj('${m['materia'] ?? ''}'),
-      };
-      final docMateria = <String, String>{};
-      for (final doc in (dash['listaDocentiClasse'] as List? ?? [])) {
-        if (doc is Map<String, dynamic> && doc['pk'] != null) {
-          final ml = (doc['materie'] as List?) ?? [];
-          if (ml.isNotEmpty) {
-            final k = '${ml.first}';
-            docMateria['${doc['pk']}'] = matByPk[k] ?? _cleanSubj(k);
-          }
-        }
-      }
-
-      final events = <SchoolEvent>[];
-      final grades = <SchoolGrade>[];
-
-      // Scarica esclusivamente promemoria/verifiche/interrogazioni (nessun compito!)
-      for (final m in _applyArgoOps(dash['promemoria'] as List?)) {
-        final txt = '${m['desAnnotazioni'] ?? ''}'.trim();
-        if (txt.isEmpty) continue;
-        final d = DateTime.tryParse('${m['datGiorno'] ?? ''}') ?? DateTime.now();
-        final docName = '${m['docente'] ?? ''}'.trim();
-        final subj =
-            docMateria['${m['pkDocente'] ?? ''}'] ?? (docName.isNotEmpty ? docName : 'Promemoria');
-        final cat = classifyText(txt);
-        events.add(SchoolEvent(
-          id: 'argo_p_${m['pk'] ?? txt.hashCode}',
-          title: txt,
-          subject: subj,
-          notes: docName.isNotEmpty ? 'Docente: $docName' : 'Promemoria Argo',
-          dateTime: DateTime(d.year, d.month, d.day, 8, 15),
-          category: cat,
-          highPriority: cat.isHighPriorityDefault,
-          fromArgo: true,
-        ));
-      }
-
-      for (final m in _applyArgoOps(dash['voti'] as List?)) {
-        final rawVal = m['valore'];
-        final val = rawVal is num ? rawVal.toDouble() : double.tryParse('$rawVal');
-        if (val == null || val <= 0) continue;
-        final rawT = '${m['codVotoPratico'] ?? 'S'}'.toUpperCase();
-        grades.add(SchoolGrade(
-          id: 'argo_v_${m['pk'] ?? m.hashCode}',
-          subject: _cleanSubj('${m['desMateria'] ?? 'Materia'}'),
-          value: val,
-          weight: '${m['faMenoMedia'] ?? 'S'}' == 'N' ? 0.0 : 1.0,
-          type: (rawT == 'N' || rawT == 'O') ? 'Orale' : (rawT == 'P' ? 'Pratico' : 'Scritto'),
-          description: '${m['descrizioneProva'] ?? m['desCommento'] ?? ''}'.trim(),
-          date: DateTime.tryParse('${m['datGiorno'] ?? ''}') ?? DateTime.now(),
-          fromArgo: true,
-        ));
-      }
-
-      return ArgoSyncResult(
-        events: events,
-        grades: grades,
-        studentName: studentName,
-        subjects: matByPk.values.toSet().toList(),
-      );
-    } finally {
-      client.close(force: true);
     }
+
+    if (loginRes.statusCode == 410) {
+      throw 'Versione DidUP ($appVersion) rifiutata dal server Argo (HTTP 410).';
+    }
+    final loginRoot = jsonDecode(loginRes.body) as Map<String, dynamic>;
+    if (loginRoot['success'] == false) {
+      throw '${loginRoot['msg'] ?? 'Login applicativo Argo non riuscito'}';
+    }
+    final profili = ((loginRoot['data'] as List?) ?? []).whereType<Map<String, dynamic>>().toList();
+    if (profili.isEmpty) throw 'Nessun profilo alunno trovato su questo account Argo.';
+
+    final attivi = profili.where((p) => p['profiloDisabilitato'] != true).toList();
+    final pool = attivi.isNotEmpty ? attivi : profili;
+    final prof = pool.firstWhere(
+      (p) => '${p['codMin'] ?? ''}'.toUpperCase() == school,
+      orElse: () => pool.first,
+    );
+
+    final xToken = '${prof['token'] ?? ''}';
+    final codMin = '${prof['codMin'] ?? school}';
+    final opzioniMap = <String, dynamic>{
+      for (final o in (prof['opzioni'] as List? ?? []))
+        if (o is Map<String, dynamic> && o['chiave'] != null) '${o['chiave']}': o['valore'],
+    };
+
+    final activeHeaders = {
+      'accept': 'application/json',
+      'argo-client-version': appVersion,
+      'content-type': 'application/json; charset=utf-8',
+      'authorization': 'Bearer $bearer',
+      'x-date-exp-auth': _fmtArgoDate(expAt),
+      'user-agent': _ua,
+      'x-auth-token': xToken,
+      'x-cod-min': codMin,
+    };
+
+    String studentName = user;
+    try {
+      final pRes = await http
+          .get(
+            Uri.parse('https://www.portaleargo.it/appfamiglia/api/rest/profilo'),
+            headers: activeHeaders,
+          )
+          .timeout(const Duration(seconds: 15));
+      final alunno = ((jsonDecode(pRes.body) as Map<String, dynamic>)['data'] as Map?)?['alunno'];
+      if (alunno is Map) {
+        final nom = '${alunno['nominativo'] ?? ''}'.trim();
+        if (nom.isNotEmpty) studentName = nom;
+      }
+    } catch (_) {}
+
+    final dashRes = await http
+        .post(
+          Uri.parse('https://www.portaleargo.it/appfamiglia/api/rest/dashboard/dashboard'),
+          headers: activeHeaders,
+          body: jsonEncode({
+            'dataultimoaggiornamento': _dataInizioDefault,
+            'opzioni': jsonEncode(opzioniMap),
+          }),
+        )
+        .timeout(const Duration(seconds: 30));
+
+    final dashRoot = jsonDecode(dashRes.body) as Map<String, dynamic>;
+    if (dashRoot['success'] == false) {
+      throw '${dashRoot['msg'] ?? 'Errore scaricamento dashboard Argo'}';
+    }
+    final datiList = (dashRoot['data'] is Map<String, dynamic>)
+        ? ((dashRoot['data']['dati'] as List?) ?? [])
+        : [];
+    if (datiList.isEmpty || datiList.first is! Map<String, dynamic>) {
+      return ArgoSyncResult(
+        events: [],
+        grades: [],
+        studentName: studentName,
+        refreshToken: refreshToken,
+      );
+    }
+    final dash = datiList.first as Map<String, dynamic>;
+
+    final matByPk = <String, String>{
+      for (final m in (dash['listaMaterie'] as List? ?? []))
+        if (m is Map<String, dynamic> && m['pk'] != null)
+          '${m['pk']}': _cleanSubj('${m['materia'] ?? ''}'),
+    };
+    final docMateria = <String, String>{};
+    for (final doc in (dash['listaDocentiClasse'] as List? ?? [])) {
+      if (doc is Map<String, dynamic> && doc['pk'] != null) {
+        final ml = (doc['materie'] as List?) ?? [];
+        if (ml.isNotEmpty) {
+          final k = '${ml.first}';
+          docMateria['${doc['pk']}'] = matByPk[k] ?? _cleanSubj(k);
+        }
+      }
+    }
+
+    final events = <SchoolEvent>[];
+    final grades = <SchoolGrade>[];
+
+    // Solo promemoria/verifiche/interrogazioni (nessun compito)
+    for (final m in _applyArgoOps(dash['promemoria'] as List?)) {
+      final txt = '${m['desAnnotazioni'] ?? ''}'.trim();
+      if (txt.isEmpty) continue;
+      final d = DateTime.tryParse('${m['datGiorno'] ?? ''}') ?? DateTime.now();
+      final docName = '${m['docente'] ?? ''}'.trim();
+      final subj =
+          docMateria['${m['pkDocente'] ?? ''}'] ?? (docName.isNotEmpty ? docName : 'Promemoria');
+      final cat = classifyText(txt);
+      events.add(SchoolEvent(
+        id: 'argo_p_${m['pk'] ?? txt.hashCode}',
+        title: txt,
+        subject: subj,
+        notes: docName.isNotEmpty ? 'Docente: $docName' : 'Promemoria Argo',
+        dateTime: DateTime(d.year, d.month, d.day, 8, 15),
+        category: cat,
+        highPriority: cat.isHighPriorityDefault,
+        reminderMode:
+            cat.isHighPriorityDefault ? EventReminderMode.defaultBoth : EventReminderMode.dayBefore17,
+        fromArgo: true,
+      ));
+    }
+
+    for (final m in _applyArgoOps(dash['voti'] as List?)) {
+      final rawVal = m['valore'];
+      final val = rawVal is num ? rawVal.toDouble() : double.tryParse('$rawVal');
+      if (val == null || val <= 0) continue;
+      final rawT = '${m['codVotoPratico'] ?? 'S'}'.toUpperCase();
+      grades.add(SchoolGrade(
+        id: 'argo_v_${m['pk'] ?? m.hashCode}',
+        subject: _cleanSubj('${m['desMateria'] ?? 'Materia'}'),
+        value: val,
+        weight: '${m['faMenoMedia'] ?? 'S'}' == 'N' ? 0.0 : 1.0,
+        type: (rawT == 'N' || rawT == 'O') ? 'Orale' : (rawT == 'P' ? 'Pratico' : 'Scritto'),
+        description: '${m['descrizioneProva'] ?? m['desCommento'] ?? ''}'.trim(),
+        date: DateTime.tryParse('${m['datGiorno'] ?? ''}') ?? DateTime.now(),
+        fromArgo: true,
+      ));
+    }
+
+    return ArgoSyncResult(
+      events: events,
+      grades: grades,
+      studentName: studentName,
+      refreshToken: refreshToken,
+    );
   }
 
   static EventCategory classifyText(String text) {
@@ -1095,21 +1592,21 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   static const _chillEmptyQuotes = [
-    'Agenda vuota, mente leggera. Che pace! 🧘',
-    'Zero scadenze in vista: goditi il meritato relax! 🌴',
-    'Tutto tranquillo qui! Ricarica le batterie 🎧',
-    'Nessun impegno segnato: giornata libera! ✨',
+    'Agenda vuota, mente leggera.',
+    'Zero scadenze in vista per questo giorno.',
+    'Tutto tranquillo qui: nessun impegno segnato.',
+    'Giornata libera da verifiche e interrogazioni.',
   ];
 
+  // Solo Lunedì – Venerdì (Sabato rimosso)
   static const _dayNames = {
     1: 'Lunedì',
     2: 'Martedì',
     3: 'Mercoledì',
     4: 'Giovedì',
     5: 'Venerdì',
-    6: 'Sabato',
   };
-  static const _dayShort = {1: 'Lun', 2: 'Mar', 3: 'Mer', 4: 'Gio', 5: 'Ven', 6: 'Sab'};
+  static const _dayShort = {1: 'Lun', 2: 'Mar', 3: 'Mer', 4: 'Gio', 5: 'Ven'};
 
   int _tab = 0;
   late List<SchoolEvent> _events = widget.storage.loadEvents();
@@ -1126,7 +1623,7 @@ class _HomeShellState extends State<HomeShell> {
   DateTime _selectedDay = DateTime.now();
   int _emptyIdx = Random().nextInt(_chillEmptyQuotes.length);
 
-  int _ttDay = DateTime.now().weekday.clamp(1, 6);
+  int _ttDay = DateTime.now().weekday > 5 ? 1 : DateTime.now().weekday;
   bool _ttWeekOverview = false;
 
   bool _syncing = false;
@@ -1230,18 +1727,27 @@ class _HomeShellState extends State<HomeShell> {
       _lastSyncError = null;
     });
     try {
+      final sameAccount = _argo.schoolCode.toUpperCase() == school.trim().toUpperCase() &&
+          _argo.username == user.trim() &&
+          _argo.password == pass;
+
       final res = demo
           ? ArgoApiService.demoData()
-          : await ArgoApiService.sync(schoolCode: school, username: user, password: pass);
+          : await ArgoApiService.sync(
+              schoolCode: school,
+              username: user,
+              password: pass,
+              savedRefreshToken: sameAccount ? _argo.refreshToken : '',
+            );
       final creds = ArgoCredentials(
         schoolCode: demo && school.isEmpty ? 'SG00000' : school.trim().toUpperCase(),
         username: demo && user.isEmpty ? 'studente.demo' : user.trim(),
         password: pass,
         studentName: res.studentName,
+        refreshToken: res.refreshToken,
         lastSync: DateTime.now(),
       );
 
-      // Mantiene eventuali modifiche o completamenti fatti dall'utente sugli eventi di Argo
       final existingById = {for (final e in _events) e.id: e};
       final mergedArgo = <SchoolEvent>[];
       for (final inc in res.events) {
@@ -1250,7 +1756,11 @@ class _HomeShellState extends State<HomeShell> {
         if (prev != null && prev.editedByUser) {
           mergedArgo.add(prev);
         } else if (prev != null) {
-          mergedArgo.add(inc.copyWith(completed: prev.completed));
+          mergedArgo.add(inc.copyWith(
+            completed: prev.completed,
+            reminderMode: prev.reminderMode,
+            customReminderAt: prev.customReminderAt,
+          ));
         } else {
           mergedArgo.add(inc);
         }
@@ -1276,14 +1786,14 @@ class _HomeShellState extends State<HomeShell> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               content:
-                  Text('✅ Sincronizzati ${mergedArgo.length} impegni e ${res.grades.length} voti!')),
+                  Text('Sincronizzati ${mergedArgo.length} impegni e ${res.grades.length} voti.')),
         );
       }
     } catch (e) {
       final cleanErr = e.toString().replaceFirst('Exception: ', '');
       setState(() => _lastSyncError = cleanErr);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('⚠️ $cleanErr')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(cleanErr)));
       }
     } finally {
       if (mounted) setState(() => _syncing = false);
@@ -1325,7 +1835,7 @@ class _HomeShellState extends State<HomeShell> {
                     },
                     onReset: () async {
                       await widget.storage.clearAll();
-                      await NotificationService.instance.syncNotifications([], enabled: false);
+                      await NotificationService.instance.syncNotifications([], enabled: _notifyOn);
                       setState(() {
                         _events = [];
                         _grades = [];
@@ -1489,7 +1999,7 @@ class _HomeShellState extends State<HomeShell> {
       );
 
   // --------------------------------------------------------------------------
-  // TAB 1: CALENDARIO & SCADENZE (SENZA COMPITI E SENZA FRASI MOTIVAZIONALI)
+  // TAB 1: CALENDARIO & SCADENZE (CATEGORIE SENZA EMOJI)
   // --------------------------------------------------------------------------
 
   Widget _buildDashboardTab(bool d, Color card, Color border) {
@@ -1509,16 +2019,37 @@ class _HomeShellState extends State<HomeShell> {
         Row(
           children: [
             Expanded(
-                child: _kpiBox(CupertinoIcons.calendar_today, const [Color(0xFF635BFF), Color(0xFF8B5CF6)],
-                    _next7DaysCount, 'Prossimi 7 giorni', card, border, txt, muted)),
+                child: _kpiBox(
+                    CupertinoIcons.calendar_today,
+                    const [Color(0xFF635BFF), Color(0xFF8B5CF6)],
+                    _next7DaysCount,
+                    'Prossimi 7 giorni',
+                    card,
+                    border,
+                    txt,
+                    muted)),
             const SizedBox(width: 10),
             Expanded(
-                child: _kpiBox(CupertinoIcons.checkmark_rectangle,
-                    const [Color(0xFF00B894), Color(0xFF00CEC9)], _todoTotal, 'Da fare in totale', card, border, txt, muted)),
+                child: _kpiBox(
+                    CupertinoIcons.checkmark_rectangle,
+                    const [Color(0xFF00B894), Color(0xFF00CEC9)],
+                    _todoTotal,
+                    'Da fare in totale',
+                    card,
+                    border,
+                    txt,
+                    muted)),
             const SizedBox(width: 10),
             Expanded(
-                child: _kpiBox(CupertinoIcons.flame_fill, const [Color(0xFFFF5E3A), Color(0xFFFF2A68)],
-                    _highPrioTotal, 'Alta priorità', card, border, txt, muted)),
+                child: _kpiBox(
+                    CupertinoIcons.flame_fill,
+                    const [Color(0xFFFF5E3A), Color(0xFFFF2A68)],
+                    _highPrioTotal,
+                    'Alta priorità',
+                    card,
+                    border,
+                    txt,
+                    muted)),
           ],
         ),
         const SizedBox(height: 15),
@@ -1543,10 +2074,10 @@ class _HomeShellState extends State<HomeShell> {
           spacing: 8,
           runSpacing: 8,
           children: [
-            _filterChip('🌈 Tutti', _catFilter == null, VibePalette.primary, d, card, border,
+            _filterChip('Tutti', _catFilter == null, VibePalette.primary, d, card, border,
                 () => setState(() => _catFilter = null)),
             for (final c in EventCategory.values)
-              _filterChip('${c.chipEmoji} ${c.label}', _catFilter == c, c.color, d, card, border,
+              _filterChip(c.label, _catFilter == c, c.color, d, card, border,
                   () => setState(() => _catFilter = c)),
           ],
         ),
@@ -1562,10 +2093,12 @@ class _HomeShellState extends State<HomeShell> {
                     const SizedBox(width: 6),
                     Expanded(
                         child: Text(monthTitle,
-                            style: TextStyle(fontSize: 18.5, fontWeight: FontWeight.w800, color: txt))),
+                            style:
+                                TextStyle(fontSize: 18.5, fontWeight: FontWeight.w800, color: txt))),
                     InkWell(
-                      onTap: () => setState(() => _calFormat =
-                          _calFormat == CalendarFormat.month ? CalendarFormat.week : CalendarFormat.month),
+                      onTap: () => setState(() => _calFormat = _calFormat == CalendarFormat.month
+                          ? CalendarFormat.week
+                          : CalendarFormat.month),
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                         decoration: BoxDecoration(
@@ -1573,7 +2106,9 @@ class _HomeShellState extends State<HomeShell> {
                             borderRadius: BorderRadius.circular(10)),
                         child: Text(_calFormat == CalendarFormat.month ? 'Mese' : 'Sett.',
                             style: const TextStyle(
-                                fontSize: 11.5, fontWeight: FontWeight.w700, color: VibePalette.primary)),
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
+                                color: VibePalette.primary)),
                       ),
                     ),
                     TextButton(
@@ -1587,14 +2122,14 @@ class _HomeShellState extends State<HomeShell> {
                     IconButton(
                       visualDensity: VisualDensity.compact,
                       icon: Icon(CupertinoIcons.chevron_left, size: 17, color: muted),
-                      onPressed: () =>
-                          setState(() => _focusedDay = DateTime(_focusedDay.year, _focusedDay.month - 1, 1)),
+                      onPressed: () => setState(
+                          () => _focusedDay = DateTime(_focusedDay.year, _focusedDay.month - 1, 1)),
                     ),
                     IconButton(
                       visualDensity: VisualDensity.compact,
                       icon: Icon(CupertinoIcons.chevron_right, size: 17, color: muted),
-                      onPressed: () =>
-                          setState(() => _focusedDay = DateTime(_focusedDay.year, _focusedDay.month + 1, 1)),
+                      onPressed: () => setState(
+                          () => _focusedDay = DateTime(_focusedDay.year, _focusedDay.month + 1, 1)),
                     ),
                   ],
                 ),
@@ -1621,8 +2156,10 @@ class _HomeShellState extends State<HomeShell> {
                   daysOfWeekStyle: DaysOfWeekStyle(
                     dowTextFormatter: (dt, loc) =>
                         DateFormat.E(loc).format(dt).replaceAll('.', '').toUpperCase(),
-                    weekdayStyle: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: muted),
-                    weekendStyle: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: muted),
+                    weekdayStyle:
+                        TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: muted),
+                    weekendStyle:
+                        TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: muted),
                   ),
                   calendarStyle: CalendarStyle(
                     defaultTextStyle: TextStyle(fontWeight: FontWeight.w700, color: txt),
@@ -1635,8 +2172,8 @@ class _HomeShellState extends State<HomeShell> {
                     ),
                     todayTextStyle: TextStyle(fontWeight: FontWeight.w800, color: txt),
                     selectedDecoration: BoxDecoration(
-                      gradient:
-                          const LinearGradient(colors: [VibePalette.primary, VibePalette.primaryGlow]),
+                      gradient: const LinearGradient(
+                          colors: [VibePalette.primary, VibePalette.primaryGlow]),
                       borderRadius: BorderRadius.circular(14),
                       boxShadow: [
                         BoxShadow(
@@ -1682,7 +2219,8 @@ class _HomeShellState extends State<HomeShell> {
                               Container(
                                   width: 9,
                                   height: 9,
-                                  decoration: BoxDecoration(color: c.color, shape: BoxShape.circle)),
+                                  decoration:
+                                      BoxDecoration(color: c.color, shape: BoxShape.circle)),
                               const SizedBox(width: 6),
                               Text(c.label,
                                   style: TextStyle(
@@ -1705,7 +2243,8 @@ class _HomeShellState extends State<HomeShell> {
                   children: [
                     Expanded(
                         child: Text(dayTitle,
-                            style: TextStyle(fontSize: 17.5, fontWeight: FontWeight.w800, color: txt))),
+                            style:
+                                TextStyle(fontSize: 17.5, fontWeight: FontWeight.w800, color: txt))),
                     InkWell(
                       borderRadius: BorderRadius.circular(20),
                       onTap: () => _showEventModal(baseDate: _selectedDay),
@@ -1731,18 +2270,20 @@ class _HomeShellState extends State<HomeShell> {
                     painter: _DashedRRectPainter(color: border, radius: 20),
                     child: Container(
                       width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 18),
+                      padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 18),
                       decoration: BoxDecoration(
-                        color: d ? alphaCol(VibePalette.darkCardAlt, 0.45) : VibePalette.lightCardAlt,
+                        color:
+                            d ? alphaCol(VibePalette.darkCardAlt, 0.45) : VibePalette.lightCardAlt,
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Column(
                         children: [
-                          const Text('🌴', style: TextStyle(fontSize: 42)),
+                          Icon(CupertinoIcons.calendar_badge_minus, size: 32, color: muted),
                           const SizedBox(height: 10),
                           Text(_chillEmptyQuotes[_emptyIdx],
                               textAlign: TextAlign.center,
-                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: muted)),
+                              style: TextStyle(
+                                  fontSize: 14, fontWeight: FontWeight.w600, color: muted)),
                         ],
                       ),
                     ),
@@ -1769,8 +2310,8 @@ class _HomeShellState extends State<HomeShell> {
             Container(
               width: 38,
               height: 38,
-              decoration:
-                  BoxDecoration(borderRadius: BorderRadius.circular(12), gradient: LinearGradient(colors: grad)),
+              decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12), gradient: LinearGradient(colors: grad)),
               child: Icon(icon, color: Colors.white, size: 19),
             ),
             const SizedBox(height: 12),
@@ -1813,7 +2354,7 @@ class _HomeShellState extends State<HomeShell> {
       GestureDetector(
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
           decoration: BoxDecoration(
             color: sel ? alphaCol(accent, 0.2) : card,
             borderRadius: BorderRadius.circular(20),
@@ -1851,12 +2392,14 @@ class _HomeShellState extends State<HomeShell> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '⏳ CONTO ALLA ROVESCIA · ${nextEv.category.label.toUpperCase()}',
-                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white70),
+                  'CONTO ALLA ROVESCIA · ${nextEv.category.label.toUpperCase()}',
+                  style:
+                      const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white70),
                 ),
                 const SizedBox(height: 6),
                 Text('${nextEv.subject} — ${nextEv.title}',
-                    style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Colors.white)),
+                    style: const TextStyle(
+                        fontSize: 17, fontWeight: FontWeight.w800, color: Colors.white)),
                 const SizedBox(height: 12),
                 Row(
                   children: [
@@ -1879,14 +2422,8 @@ class _HomeShellState extends State<HomeShell> {
           child: list.isEmpty
               ? Padding(
                   padding: const EdgeInsets.symmetric(vertical: 26),
-                  child: Column(
-                    children: [
-                      const Text('🎉', style: TextStyle(fontSize: 40)),
-                      const SizedBox(height: 8),
-                      Text('Nessuna verifica o interrogazione in programma!',
-                          textAlign: TextAlign.center, style: TextStyle(color: muted)),
-                    ],
-                  ),
+                  child: Text('Nessuna verifica o interrogazione in programma.',
+                      textAlign: TextAlign.center, style: TextStyle(color: muted)),
                 )
               : Column(children: list.map((e) => _eventCardTile(e, d, border, txt, muted)).toList()),
         ),
@@ -1896,13 +2433,16 @@ class _HomeShellState extends State<HomeShell> {
 
   Widget _cdBox(String val, String unit) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-        decoration:
-            BoxDecoration(color: alphaCol(Colors.black, 0.24), borderRadius: BorderRadius.circular(12)),
+        decoration: BoxDecoration(
+            color: alphaCol(Colors.black, 0.24), borderRadius: BorderRadius.circular(12)),
         child: Column(
           children: [
-            Text(val, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white)),
+            Text(val,
+                style: const TextStyle(
+                    fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white)),
             Text(unit,
-                style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: Colors.white70)),
+                style: const TextStyle(
+                    fontSize: 9.5, fontWeight: FontWeight.w700, color: Colors.white70)),
           ],
         ),
       );
@@ -1948,7 +2488,8 @@ class _HomeShellState extends State<HomeShell> {
                   color: ev.completed ? VibePalette.okGreen : alphaCol(c, 0.15),
                   border: Border.all(color: ev.completed ? VibePalette.okGreen : c, width: 2),
                 ),
-                child: ev.completed ? const Icon(Icons.check, size: 15, color: Colors.white) : null,
+                child:
+                    ev.completed ? const Icon(Icons.check, size: 15, color: Colors.white) : null,
               ),
             ),
             const SizedBox(width: 11),
@@ -1961,14 +2502,14 @@ class _HomeShellState extends State<HomeShell> {
                     runSpacing: 5,
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                        decoration:
-                            BoxDecoration(color: alphaCol(c, 0.18), borderRadius: BorderRadius.circular(7)),
-                        child: Text('${ev.category.badgeDot} ${ev.category.label}',
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                            color: alphaCol(c, 0.18), borderRadius: BorderRadius.circular(7)),
+                        child: Text(ev.category.label,
                             style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: c)),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                         decoration: BoxDecoration(
                             color: alphaCol(VibePalette.primary, 0.16),
                             borderRadius: BorderRadius.circular(7)),
@@ -1977,7 +2518,7 @@ class _HomeShellState extends State<HomeShell> {
                                 fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF818CF8))),
                       ),
                       if (!ev.completed)
-                        Text('⏱ ${_countdownText(ev.dateTime)}',
+                        Text(_countdownText(ev.dateTime),
                             style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: txt)),
                     ],
                   ),
@@ -1991,10 +2532,12 @@ class _HomeShellState extends State<HomeShell> {
                       decoration: ev.completed ? TextDecoration.lineThrough : null,
                     ),
                   ),
-                  if (ev.notes.isNotEmpty) Text(ev.notes, style: TextStyle(fontSize: 12, color: muted)),
+                  if (ev.notes.isNotEmpty)
+                    Text(ev.notes, style: TextStyle(fontSize: 12, color: muted)),
                   const SizedBox(height: 4),
                   Text(
                     '${DateFormat('EEE d MMM · HH:mm', 'it_IT').format(ev.dateTime)}'
+                    ' · ${ev.reminderSummary()}'
                     '${ev.fromArgo ? (ev.editedByUser ? ' · Argo (modificato)' : ' · Argo') : ''}',
                     style: TextStyle(fontSize: 11, color: muted),
                   ),
@@ -2020,14 +2563,64 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   // --------------------------------------------------------------------------
-  // TAB 2: ORARIO SCOLASTICO (MATERIE + ORE MATTINA & POMERIGGIO)
+  // TAB 2: ORARIO SCOLASTICO (LUN-VEN, MULTI-SLOT, SPAZIO 36PX DOPO LE 13:00)
   // --------------------------------------------------------------------------
 
   Widget _buildTimetableTab(bool d, Color card, Color border) {
     final txt = d ? Colors.white : const Color(0xFF0F172A);
     final muted = d ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
-    final sched = _timetable[_ttDay] ?? DaySchedule.initial(_ttDay);
+    final sched = _timetable[_ttDay] ?? DaySchedule.initial();
     final todayWd = DateTime.now().weekday;
+    final totalHours = sched.morning.length + sched.afternoon.length;
+
+    // Lista unificata degli slot della giornata con stacco leggero (36 px) dopo le 13:00
+    final dayRows = <Widget>[];
+    bool gapAddedAfter13 = false;
+    bool hasAnySlotBefore13 = false;
+
+    for (int i = 0; i < sched.morning.length; i++) {
+      final slot = sched.morning[i];
+      final post13 = slot.isAfter1300(false);
+      if (post13 && hasAnySlotBefore13 && !gapAddedAfter13) {
+        dayRows.add(const SizedBox(height: 28)); // +8px margine inferiore = 36px totali (30-40px)
+        gapAddedAfter13 = true;
+      }
+      if (!post13) hasAnySlotBefore13 = true;
+      dayRows.add(_lessonRow(
+        indexLabel: '${i + 1}ª',
+        slot: slot,
+        isAfternoon: false,
+        d: d,
+        border: border,
+        txt: txt,
+        muted: muted,
+        onTap: () => _editLessonSlotModal(_ttDay, false, i),
+      ));
+    }
+
+    for (int i = 0; i < sched.afternoon.length; i++) {
+      if ((hasAnySlotBefore13 || sched.morning.isNotEmpty) && !gapAddedAfter13) {
+        dayRows.add(const SizedBox(height: 28)); // +8px margine inferiore = 36px totali (30-40px)
+        gapAddedAfter13 = true;
+      }
+      final slot = sched.afternoon[i];
+      dayRows.add(_lessonRow(
+        indexLabel: '${sched.morning.length + i + 1}ª',
+        slot: slot,
+        isAfternoon: true,
+        d: d,
+        border: border,
+        txt: txt,
+        muted: muted,
+        onTap: () => _editLessonSlotModal(_ttDay, true, i),
+        onRemove: () async {
+          final next = [...sched.afternoon]..removeAt(i);
+          setState(
+              () => _timetable[_ttDay] = DaySchedule(morning: sched.morning, afternoon: next));
+          await _saveTimetable();
+        },
+      ));
+    }
 
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
@@ -2036,7 +2629,7 @@ class _HomeShellState extends State<HomeShell> {
         Row(
           children: [
             Expanded(
-              child: Text('🕒 Orario Scolastico',
+              child: Text('Orario Scolastico',
                   style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: txt)),
             ),
             Container(
@@ -2058,25 +2651,24 @@ class _HomeShellState extends State<HomeShell> {
         if (_ttWeekOverview)
           _buildWeekOverview(d, card, border, txt, muted)
         else ...[
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                for (int wd = 1; wd <= 6; wd++)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
+          Row(
+            children: [
+              for (int wd = 1; wd <= 5; wd++)
+                Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.only(right: wd < 5 ? 8 : 0),
                     child: GestureDetector(
                       onTap: () => setState(() => _ttDay = wd),
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 180),
-                        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
                         decoration: BoxDecoration(
                           gradient: _ttDay == wd
                               ? const LinearGradient(
                                   colors: [VibePalette.primary, VibePalette.primaryGlow])
                               : null,
                           color: _ttDay == wd ? null : card,
-                          borderRadius: BorderRadius.circular(18),
+                          borderRadius: BorderRadius.circular(16),
                           border: Border.all(
                               color: _ttDay == wd
                                   ? VibePalette.primary
@@ -2094,13 +2686,15 @@ class _HomeShellState extends State<HomeShell> {
                             ),
                             if ((_timetable[wd]?.afternoon.isNotEmpty ?? false))
                               Padding(
-                                padding: const EdgeInsets.only(top: 3),
+                                padding: const EdgeInsets.only(top: 2),
                                 child: Text(
-                                  '+${_timetable[wd]!.afternoon.length} pom',
+                                  '+${_timetable[wd]!.afternoon.length}',
                                   style: TextStyle(
                                     fontSize: 9.5,
                                     fontWeight: FontWeight.w700,
-                                    color: _ttDay == wd ? Colors.white70 : VibePalette.interrogazioneAmber,
+                                    color: _ttDay == wd
+                                        ? Colors.white70
+                                        : VibePalette.interrogazioneAmber,
                                   ),
                                 ),
                               ),
@@ -2109,12 +2703,12 @@ class _HomeShellState extends State<HomeShell> {
                       ),
                     ),
                   ),
-              ],
-            ),
+                ),
+            ],
           ),
           const SizedBox(height: 16),
 
-          // CARD MATTINA
+          // UNICA CARD GIORNALIERA CONTINUA (SENZA DIVISIONE NETTA MATTINA / POMERIGGIO)
           Container(
             padding: const EdgeInsets.all(18),
             decoration: cardDeco(card, border),
@@ -2125,13 +2719,13 @@ class _HomeShellState extends State<HomeShell> {
                   children: [
                     Expanded(
                       child: Text(
-                        '☀️ Mattina · ${_dayNames[_ttDay]} (${sched.morning.length} ore)',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: txt),
+                        '${_dayNames[_ttDay]} ($totalHours ore)',
+                        style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.w800, color: txt),
                       ),
                     ),
                     IconButton(
                       visualDensity: VisualDensity.compact,
-                      tooltip: 'Togli ora mattina',
+                      tooltip: 'Togli ora entro le 13:00',
                       onPressed: sched.morning.isEmpty
                           ? null
                           : () async {
@@ -2145,7 +2739,7 @@ class _HomeShellState extends State<HomeShell> {
                     IconButton(
                       visualDensity: VisualDensity.compact,
                       tooltip: 'Aggiungi ora mattina',
-                      onPressed: sched.morning.length >= 8
+                      onPressed: sched.morning.length >= 7
                           ? null
                           : () async {
                               final next = [
@@ -2162,52 +2756,34 @@ class _HomeShellState extends State<HomeShell> {
                   ],
                 ),
                 const SizedBox(height: 10),
-                if (sched.morning.isEmpty)
-                  Text('Nessuna ora al mattino. Premi + per aggiungere ore.',
+                if (dayRows.isEmpty)
+                  Text('Nessuna ora impostata. Premi + per aggiungere ore.',
                       style: TextStyle(fontSize: 13, color: muted))
                 else
-                  for (int i = 0; i < sched.morning.length; i++)
-                    _lessonRow(
-                      indexLabel: '${i + 1}ª',
-                      slot: sched.morning[i],
-                      isAfternoon: false,
-                      d: d,
-                      border: border,
-                      txt: txt,
-                      muted: muted,
-                      onTap: () => _editLessonSlotModal(_ttDay, false, i),
-                    ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // CARD ORE POMERIGGIO (AGGIUNGI / TOGLI ORE POMERIGGIO)
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: cardDeco(card, border),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+                  ...dayRows,
+                const SizedBox(height: 10),
                 Row(
                   children: [
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '🌇 Ore Pomeriggio (${sched.afternoon.length})',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: txt),
-                          ),
-                          Text(
-                            'Aggiungi o rimuovi rientri pomeridiani per ${_dayNames[_ttDay]}',
-                            style: TextStyle(fontSize: 12, color: muted),
-                          ),
-                        ],
+                      child: FilledButton.tonalIcon(
+                        onPressed: () async {
+                          final newIdx = sched.afternoon.length;
+                          final next = [
+                            ...sched.afternoon,
+                            LessonSlot(time: DaySchedule.defaultAfternoonTime(newIdx)),
+                          ];
+                          setState(() => _timetable[_ttDay] =
+                              DaySchedule(morning: sched.morning, afternoon: next));
+                          await _saveTimetable();
+                          if (mounted) _editLessonSlotModal(_ttDay, true, newIdx);
+                        },
+                        icon: const Icon(CupertinoIcons.plus_circle_fill, size: 17),
+                        label: const Text('Ora dopo le 13:00'),
                       ),
                     ),
-                    if (sched.afternoon.isNotEmpty)
-                      TextButton.icon(
+                    if (sched.afternoon.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
                         onPressed: () async {
                           final next = [...sched.afternoon]..removeLast();
                           setState(() => _timetable[_ttDay] =
@@ -2217,63 +2793,10 @@ class _HomeShellState extends State<HomeShell> {
                         icon: const Icon(CupertinoIcons.minus_circle,
                             size: 16, color: VibePalette.verificaRed),
                         label: const Text('Togli',
-                            style: TextStyle(
-                                color: VibePalette.verificaRed, fontWeight: FontWeight.w700)),
+                            style: TextStyle(color: VibePalette.verificaRed)),
                       ),
+                    ],
                   ],
-                ),
-                const SizedBox(height: 12),
-                if (sched.afternoon.isEmpty)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: d ? alphaCol(VibePalette.darkCardAlt, 0.5) : VibePalette.lightCardAlt,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: border),
-                    ),
-                    child: Text(
-                      'Nessuna ora pomeridiana impostata in questo giorno.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 13, color: muted),
-                    ),
-                  )
-                else
-                  for (int i = 0; i < sched.afternoon.length; i++)
-                    _lessonRow(
-                      indexLabel: '${i + 1}ª pom',
-                      slot: sched.afternoon[i],
-                      isAfternoon: true,
-                      d: d,
-                      border: border,
-                      txt: txt,
-                      muted: muted,
-                      onTap: () => _editLessonSlotModal(_ttDay, true, i),
-                      onRemove: () async {
-                        final next = [...sched.afternoon]..removeAt(i);
-                        setState(() => _timetable[_ttDay] =
-                            DaySchedule(morning: sched.morning, afternoon: next));
-                        await _saveTimetable();
-                      },
-                    ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.tonalIcon(
-                    onPressed: () async {
-                      final newIdx = sched.afternoon.length;
-                      final next = [
-                        ...sched.afternoon,
-                        LessonSlot(time: DaySchedule.defaultAfternoonTime(newIdx)),
-                      ];
-                      setState(() => _timetable[_ttDay] =
-                          DaySchedule(morning: sched.morning, afternoon: next));
-                      await _saveTimetable();
-                      if (mounted) _editLessonSlotModal(_ttDay, true, newIdx);
-                    },
-                    icon: const Icon(CupertinoIcons.plus_circle_fill, size: 18),
-                    label: const Text('Aggiungi ora pomeriggio'),
-                  ),
                 ),
               ],
             ),
@@ -2300,7 +2823,7 @@ class _HomeShellState extends State<HomeShell> {
         : (isAfternoon ? VibePalette.interrogazioneAmber : muted);
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 9),
+      padding: const EdgeInsets.only(bottom: 8),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: onTap,
@@ -2350,7 +2873,7 @@ class _HomeShellState extends State<HomeShell> {
                 const SizedBox(width: 4),
                 IconButton(
                   visualDensity: VisualDensity.compact,
-                  tooltip: 'Rimuovi ora pomeriggio',
+                  tooltip: 'Rimuovi ora',
                   onPressed: onRemove,
                   icon: const Icon(CupertinoIcons.minus_circle_fill,
                       size: 19, color: VibePalette.verificaRed),
@@ -2366,11 +2889,11 @@ class _HomeShellState extends State<HomeShell> {
   Widget _buildWeekOverview(bool d, Color card, Color border, Color txt, Color muted) {
     return Column(
       children: [
-        for (int wd = 1; wd <= 6; wd++)
+        for (int wd = 1; wd <= 5; wd++)
           Builder(builder: (_) {
-            final s = _timetable[wd] ?? DaySchedule.initial(wd);
-            final mFilled = s.morning.where((x) => x.subject.trim().isNotEmpty).toList();
-            final aFilled = s.afternoon.where((x) => x.subject.trim().isNotEmpty).toList();
+            final s = _timetable[wd] ?? DaySchedule.initial();
+            final all = [...s.morning, ...s.afternoon];
+            final filled = all.where((x) => x.subject.trim().isNotEmpty).toList();
             return GestureDetector(
               onTap: () => setState(() {
                 _ttDay = wd;
@@ -2390,7 +2913,7 @@ class _HomeShellState extends State<HomeShell> {
                           child: Text(_dayNames[wd]!,
                               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: txt)),
                         ),
-                        Text('Modifica ›',
+                        const Text('Modifica ›',
                             style: TextStyle(
                                 fontSize: 12.5,
                                 fontWeight: FontWeight.w700,
@@ -2398,59 +2921,32 @@ class _HomeShellState extends State<HomeShell> {
                       ],
                     ),
                     const SizedBox(height: 8),
-                    if (mFilled.isEmpty && s.afternoon.isEmpty)
+                    if (filled.isEmpty)
                       Text('Nessuna materia inserita', style: TextStyle(fontSize: 12.5, color: muted))
-                    else ...[
-                      if (mFilled.isNotEmpty)
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 6,
-                          children: [
-                            for (int i = 0; i < s.morning.length; i++)
-                              if (s.morning[i].subject.trim().isNotEmpty)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: alphaCol(subjectAccent(s.morning[i].subject), 0.16),
-                                    borderRadius: BorderRadius.circular(9),
-                                  ),
-                                  child: Text(
-                                    '${i + 1}ª ${s.morning[i].subject}',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w700,
-                                      color: subjectAccent(s.morning[i].subject),
-                                    ),
-                                  ),
-                                ),
-                          ],
-                        ),
-                      if (s.afternoon.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 6,
-                          children: [
-                            for (int i = 0; i < s.afternoon.length; i++)
+                    else
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          for (int i = 0; i < all.length; i++)
+                            if (all[i].subject.trim().isNotEmpty)
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                                 decoration: BoxDecoration(
-                                  color: alphaCol(VibePalette.interrogazioneAmber, 0.18),
+                                  color: alphaCol(subjectAccent(all[i].subject), 0.16),
                                   borderRadius: BorderRadius.circular(9),
                                 ),
                                 child: Text(
-                                  '🌇 ${i + 1}ª pom: ${aFilled.isEmpty && s.afternoon[i].subject.trim().isEmpty ? "Da scegliere" : (s.afternoon[i].subject.trim().isEmpty ? "Da scegliere" : s.afternoon[i].subject)}',
-                                  style: const TextStyle(
+                                  '${i + 1}ª ${all[i].subject}',
+                                  style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w700,
-                                    color: VibePalette.interrogazioneAmber,
+                                    color: subjectAccent(all[i].subject),
                                   ),
                                 ),
                               ),
-                          ],
-                        ),
-                      ],
-                    ],
+                        ],
+                      ),
                   ],
                 ),
               ),
@@ -2461,140 +2957,241 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   void _editLessonSlotModal(int weekday, bool isAfternoon, int idx) {
-    final sched = _timetable[weekday] ?? DaySchedule.initial(weekday);
+    final sched = _timetable[weekday] ?? DaySchedule.initial();
     final list = isAfternoon ? sched.afternoon : sched.morning;
     if (idx < 0 || idx >= list.length) return;
 
     final current = list[idx];
+    final fallbackStartH = isAfternoon ? (14 + idx) : (8 + idx);
+    int startMin = current.startMinutes(fallbackStartH);
+    int endMin = current.endMinutes(fallbackStartH);
+
+    // Rileva se questa materia occupa già più slot consecutivi a partire da idx
+    int initialSpan = 1;
+    if (current.subject.trim().isNotEmpty) {
+      while (idx + initialSpan < list.length &&
+          list[idx + initialSpan].subject.trim().toLowerCase() ==
+              current.subject.trim().toLowerCase()) {
+        final nextEnd = list[idx + initialSpan].endMinutes(fallbackStartH + initialSpan);
+        if (nextEnd > endMin) endMin = nextEnd;
+        initialSpan++;
+      }
+    }
+    if (endMin <= startMin) endMin = startMin + 60;
+
     final subjCtrl = TextEditingController(text: current.subject);
-    final timeCtrl = TextEditingController(
-      text: current.time.isNotEmpty
-          ? current.time
-          : (isAfternoon
-              ? DaySchedule.defaultAfternoonTime(idx)
-              : DaySchedule.defaultMorningTime(idx)),
-    );
     final roomCtrl = TextEditingController(text: current.room);
     final suggestions = _knownSubjects;
+
+    int calcSpan(int sMin, int eMin) {
+      if (eMin <= sMin) return 1;
+      return ((eMin - sMin) / 55.0).round().clamp(1, 6);
+    }
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: widget.isDark ? VibePalette.darkCard : VibePalette.lightCard,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
+      shape:
+          const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setM) => Padding(
-          padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 22),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${isAfternoon ? "🌇 ${idx + 1}ª ora pomeriggio" : "☀️ ${idx + 1}ª ora mattina"} · ${_dayNames[weekday]}',
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: subjCtrl,
-                  decoration: fieldDeco('Materia (es. Matematica)', icon: CupertinoIcons.book),
-                ),
-                if (suggestions.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    height: 36,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: suggestions.length,
-                      separatorBuilder: (_, __) => const SizedBox(width: 6),
-                      itemBuilder: (_, i) {
-                        final s = suggestions[i];
-                        return ActionChip(
-                          label: Text(s, style: const TextStyle(fontSize: 12)),
-                          onPressed: () => setM(() => subjCtrl.text = s),
-                        );
-                      },
-                    ),
+        builder: (ctx, setM) {
+          final span = calcSpan(startMin, endMin);
+          return Padding(
+            padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 22),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${_dayNames[weekday]} · ${isAfternoon ? "${sched.morning.length + idx + 1}ª ora" : "${idx + 1}ª ora"}',
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
                   ),
-                ],
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: timeCtrl,
-                        decoration: fieldDeco('Orario (es. 08:00 - 09:00)', icon: CupertinoIcons.clock),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: TextField(
-                        controller: roomCtrl,
-                        decoration: fieldDeco('Aula / Lab (opz.)', icon: CupertinoIcons.location),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: subjCtrl,
+                    decoration: fieldDeco('Materia (es. Matematica)', icon: CupertinoIcons.book),
+                  ),
+                  if (suggestions.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      height: 36,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: suggestions.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 6),
+                        itemBuilder: (_, i) {
+                          final s = suggestions[i];
+                          return ActionChip(
+                            label: Text(s, style: const TextStyle(fontSize: 12)),
+                            onPressed: () => setM(() => subjCtrl.text = s),
+                          );
+                        },
                       ),
                     ),
                   ],
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed: () async {
-                        if (isAfternoon) {
-                          final next = [...sched.afternoon]..removeAt(idx);
-                          setState(() => _timetable[weekday] =
-                              DaySchedule(morning: sched.morning, afternoon: next));
-                        } else {
-                          final next = [...sched.morning];
-                          next[idx] = LessonSlot(time: timeCtrl.text.trim());
-                          setState(() => _timetable[weekday] =
-                              DaySchedule(morning: next, afternoon: sched.afternoon));
-                        }
-                        await _saveTimetable();
-                        if (ctx.mounted) Navigator.pop(ctx);
-                      },
-                      icon: Icon(
-                        isAfternoon ? CupertinoIcons.trash : CupertinoIcons.clear_circled,
-                        size: 16,
-                        color: VibePalette.verificaRed,
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(CupertinoIcons.clock, size: 16),
+                          label: Text('Dalle ${fmtMin(startMin)}'),
+                          onPressed: () async {
+                            final picked = await showTimePicker(
+                              context: ctx,
+                              initialTime:
+                                  TimeOfDay(hour: startMin ~/ 60, minute: startMin % 60),
+                            );
+                            if (picked != null) {
+                              setM(() {
+                                startMin = picked.hour * 60 + picked.minute;
+                                if (endMin <= startMin) endMin = startMin + 60;
+                              });
+                            }
+                          },
+                        ),
                       ),
-                      label: Text(
-                        isAfternoon ? 'Rimuovi ora' : 'Svuota',
-                        style: const TextStyle(color: VibePalette.verificaRed),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(CupertinoIcons.clock_fill, size: 16),
+                          label: Text('Alle ${fmtMin(endMin)}'),
+                          onPressed: () async {
+                            final picked = await showTimePicker(
+                              context: ctx,
+                              initialTime: TimeOfDay(hour: endMin ~/ 60, minute: endMin % 60),
+                            );
+                            if (picked != null) {
+                              final cand = picked.hour * 60 + picked.minute;
+                              if (cand > startMin) setM(() => endMin = cand);
+                            }
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: [1, 2, 3].map((h) {
+                      final active = span == h;
+                      return ChoiceChip(
+                        label: Text(h == 1 ? '1 ora (1 slot)' : '$h ore ($h slot)'),
+                        selected: active,
+                        onSelected: (_) => setM(() => endMin = startMin + h * 60),
+                      );
+                    }).toList(),
+                  ),
+                  if (span > 1) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      'Occuperà automaticamente $span slot consecutivi (${fmtMin(startMin)} - ${fmtMin(endMin)}).',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF818CF8),
                       ),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: FilledButton(
+                  ],
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: roomCtrl,
+                    decoration: fieldDeco('Aula / Laboratorio (opzionale)',
+                        icon: CupertinoIcons.location),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      OutlinedButton.icon(
                         onPressed: () async {
-                          final updated = LessonSlot(
-                            subject: subjCtrl.text.trim(),
-                            time: timeCtrl.text.trim(),
-                            room: roomCtrl.text.trim(),
-                          );
                           if (isAfternoon) {
-                            final next = [...sched.afternoon];
-                            next[idx] = updated;
+                            final next = [...sched.afternoon]..removeAt(idx);
                             setState(() => _timetable[weekday] =
                                 DaySchedule(morning: sched.morning, afternoon: next));
                           } else {
                             final next = [...sched.morning];
-                            next[idx] = updated;
+                            next[idx] = LessonSlot(time: DaySchedule.defaultMorningTime(idx));
                             setState(() => _timetable[weekday] =
                                 DaySchedule(morning: next, afternoon: sched.afternoon));
                           }
                           await _saveTimetable();
                           if (ctx.mounted) Navigator.pop(ctx);
                         },
-                        child: const Text('Salva Ora'),
+                        icon: Icon(
+                          isAfternoon ? CupertinoIcons.trash : CupertinoIcons.clear_circled,
+                          size: 16,
+                          color: VibePalette.verificaRed,
+                        ),
+                        label: Text(
+                          isAfternoon ? 'Rimuovi' : 'Svuota',
+                          style: const TextStyle(color: VibePalette.verificaRed),
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ],
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: () async {
+                            final subj = subjCtrl.text.trim();
+                            final room = roomCtrl.text.trim();
+                            final work = [...list];
+
+                            // Se l'utente ha scelto un orario d'inizio corrispondente a un altro slot esistente, parte da quello
+                            int startIdx = idx;
+                            for (int i = 0; i < work.length; i++) {
+                              final fb = isAfternoon ? (14 + i) : (8 + i);
+                              if (work[i].startMinutes(fb) == startMin) {
+                                startIdx = i;
+                                break;
+                              }
+                            }
+
+                            final stepMin = max(30, (endMin - startMin) ~/ span);
+                            for (int k = 0; k < span; k++) {
+                              final sM = startMin + k * stepMin;
+                              final eM = (k == span - 1) ? endMin : (startMin + (k + 1) * stepMin);
+                              final sliceTime = '${fmtMin(sM)} - ${fmtMin(eM)}';
+                              final target = startIdx + k;
+                              final slotVal = LessonSlot(
+                                subject: subj,
+                                time: sliceTime,
+                                room: room,
+                              );
+                              if (target < work.length) {
+                                work[target] = slotVal;
+                              } else {
+                                work.add(slotVal);
+                              }
+                            }
+
+                            // Se prima occupava più slot e ora è stato ridotto (es. da 2 a 1 ora), libera lo slot in eccesso
+                            if (startIdx == idx && span < initialSpan) {
+                              for (int k = span; k < initialSpan && (idx + k) < work.length; k++) {
+                                final fb = isAfternoon ? (14 + idx + k) : (8 + idx + k);
+                                work[idx + k] =
+                                    LessonSlot(time: '${fmtMin(fb * 60)} - ${fmtMin((fb + 1) * 60)}');
+                              }
+                            }
+
+                            setState(() {
+                              _timetable[weekday] = isAfternoon
+                                  ? DaySchedule(morning: sched.morning, afternoon: work)
+                                  : DaySchedule(morning: work, afternoon: sched.afternoon);
+                            });
+                            await _saveTimetable();
+                            if (ctx.mounted) Navigator.pop(ctx);
+                          },
+                          child: Text(span > 1 ? 'Salva ($span slot)' : 'Salva Ora'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
@@ -2695,7 +3292,7 @@ class _HomeShellState extends State<HomeShell> {
             decoration: cardDeco(card, border),
             child: Column(
               children: [
-                const Text('📊', style: TextStyle(fontSize: 42)),
+                Icon(CupertinoIcons.chart_bar_alt_fill, size: 38, color: muted),
                 const SizedBox(height: 10),
                 Text('Nessun voto presente',
                     style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.w800, color: txt)),
@@ -2723,8 +3320,8 @@ class _HomeShellState extends State<HomeShell> {
                   width: 46,
                   height: 46,
                   alignment: Alignment.center,
-                  decoration:
-                      BoxDecoration(color: alphaCol(col, 0.16), borderRadius: BorderRadius.circular(13)),
+                  decoration: BoxDecoration(
+                      color: alphaCol(col, 0.16), borderRadius: BorderRadius.circular(13)),
                   child: Text(m.toStringAsFixed(1),
                       style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w900, color: col)),
                 ),
@@ -2732,7 +3329,7 @@ class _HomeShellState extends State<HomeShell> {
                 subtitle: Text(
                   needed > 0 && needed <= 10
                       ? '${list.length} voti · Per il ${target.toInt()} serve ${needed.toStringAsFixed(1)}'
-                      : '${list.length} voti · Ottima media! 🔥',
+                      : '${list.length} voti · Media solida',
                   style: TextStyle(fontSize: 12, color: muted),
                 ),
                 children: list.map((g) {
@@ -2766,25 +3363,28 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   // --------------------------------------------------------------------------
-  // MODALI NOTIFICHE, CREA / MODIFICA EVENTO (ANCHE ARGO) E NUOVO VOTO
+  // MODALI NOTIFICHE, CREA / MODIFICA EVENTO (CON PROMEMORIA CUSTOM) E NUOVO VOTO
   // --------------------------------------------------------------------------
 
   void _showNotificationSheet() {
     showModalBottomSheet(
       context: context,
       backgroundColor: widget.isDark ? VibePalette.darkCard : VibePalette.lightCard,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
+      shape:
+          const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
       builder: (ctx) => Padding(
         padding: const EdgeInsets.all(22),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('🔔 Promemoria Automatici',
+            const Text('Notifiche & Orario Mattutino',
                 style: TextStyle(fontSize: 18.5, fontWeight: FontWeight.w800)),
             const SizedBox(height: 8),
             const Text(
-                'Ricevi notifiche push locali il giorno prima (17:00) e la mattina stessa (07:15) di ogni Verifica o Interrogazione.'),
+              'Ogni mattina alle 07:20 ricevi una notifica per controllare l\'orario del giorno sull\'app. '
+              'Inoltre ogni singolo impegno ha il proprio orario di notifica personalizzabile.',
+            ),
             const SizedBox(height: 14),
             SizedBox(
               width: double.infinity,
@@ -2812,12 +3412,16 @@ class _HomeShellState extends State<HomeShell> {
     final startDay = baseDate ?? DateTime.now();
     var dt = existing?.dateTime ?? DateTime(startDay.year, startDay.month, startDay.day, 8, 15);
     var prio = existing?.highPriority ?? true;
+    var remMode = existing?.reminderMode ?? EventReminderMode.defaultBoth;
+    DateTime customRem = existing?.customReminderAt ??
+        DateTime(dt.year, dt.month, dt.day, 17, 0).subtract(const Duration(days: 1));
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: widget.isDark ? VibePalette.darkCard : VibePalette.lightCard,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
+      shape:
+          const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setM) => Padding(
           padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 22),
@@ -2827,7 +3431,7 @@ class _HomeShellState extends State<HomeShell> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  isEdit ? '✏️ Modifica Impegno' : '✨ Nuovo Impegno',
+                  isEdit ? 'Modifica Impegno' : 'Nuovo Impegno',
                   style: const TextStyle(fontSize: 18.5, fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 12),
@@ -2835,7 +3439,7 @@ class _HomeShellState extends State<HomeShell> {
                   spacing: 8,
                   children: EventCategory.values
                       .map((c) => ChoiceChip(
-                            label: Text('${c.badgeDot} ${c.label}'),
+                            label: Text(c.label),
                             selected: cat == c,
                             onSelected: (_) => setM(() {
                               cat = c;
@@ -2864,7 +3468,13 @@ class _HomeShellState extends State<HomeShell> {
                               firstDate: DateTime(2023),
                               lastDate: DateTime(2030));
                           if (p != null) {
-                            setM(() => dt = DateTime(p.year, p.month, p.day, dt.hour, dt.minute));
+                            setM(() {
+                              dt = DateTime(p.year, p.month, p.day, dt.hour, dt.minute);
+                              if (!isEdit && remMode != EventReminderMode.custom) {
+                                customRem = DateTime(p.year, p.month, p.day, 17, 0)
+                                    .subtract(const Duration(days: 1));
+                              }
+                            });
                           }
                         },
                       ),
@@ -2885,9 +3495,71 @@ class _HomeShellState extends State<HomeShell> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 12),
+
+                // SEZIONE PERSONALIZZAZIONE NOTIFICA PER QUESTO EVENTO
+                DropdownButtonFormField<EventReminderMode>(
+                  value: remMode,
+                  isExpanded: true,
+                  decoration: fieldDeco(
+                    'Quando ricevere la notifica',
+                    icon: CupertinoIcons.bell,
+                  ),
+                  items: EventReminderMode.values
+                      .map((m) => DropdownMenuItem(
+                            value: m,
+                            child: Text(m.label, overflow: TextOverflow.ellipsis),
+                          ))
+                      .toList(),
+                  onChanged: (v) {
+                    if (v != null) setM(() => remMode = v);
+                  },
+                ),
+                if (remMode == EventReminderMode.custom) ...[
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(CupertinoIcons.bell_circle, size: 16),
+                          label: Text('Giorno: ${DateFormat('dd/MM/yyyy').format(customRem)}'),
+                          onPressed: () async {
+                            final p = await showDatePicker(
+                              context: ctx,
+                              initialDate: customRem,
+                              firstDate: DateTime(2023),
+                              lastDate: DateTime(2030),
+                            );
+                            if (p != null) {
+                              setM(() => customRem = DateTime(
+                                  p.year, p.month, p.day, customRem.hour, customRem.minute));
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(CupertinoIcons.time, size: 16),
+                          label: Text('Ora: ${DateFormat('HH:mm').format(customRem)}'),
+                          onPressed: () async {
+                            final t = await showTimePicker(
+                              context: ctx,
+                              initialTime: TimeOfDay.fromDateTime(customRem),
+                            );
+                            if (t != null) {
+                              setM(() => customRem = DateTime(
+                                  customRem.year, customRem.month, customRem.day, t.hour, t.minute));
+                            }
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('🔥 Alta priorità & Promemoria push'),
+                  title: const Text('Segna come alta priorità'),
                   value: prio,
                   onChanged: (v) => setM(() => prio = v),
                 ),
@@ -2901,15 +3573,16 @@ class _HomeShellState extends State<HomeShell> {
                         },
                         icon: const Icon(CupertinoIcons.trash,
                             size: 16, color: VibePalette.verificaRed),
-                        label: const Text('Elimina',
-                            style: TextStyle(color: VibePalette.verificaRed)),
+                        label:
+                            const Text('Elimina', style: TextStyle(color: VibePalette.verificaRed)),
                       ),
                       const SizedBox(width: 10),
                     ],
                     Expanded(
                       child: FilledButton(
                         onPressed: () async {
-                          final s = subjCtrl.text.trim().isEmpty ? 'Materia' : subjCtrl.text.trim();
+                          final s =
+                              subjCtrl.text.trim().isEmpty ? 'Materia' : subjCtrl.text.trim();
                           final t = titleCtrl.text.trim().isEmpty
                               ? '${cat.label} di $s'
                               : titleCtrl.text.trim();
@@ -2925,6 +3598,9 @@ class _HomeShellState extends State<HomeShell> {
                                   category: cat,
                                   highPriority: prio,
                                   editedByUser: true,
+                                  reminderMode: remMode,
+                                  customReminderAt:
+                                      remMode == EventReminderMode.custom ? customRem : null,
                                 );
                               }
                             } else {
@@ -2936,6 +3612,9 @@ class _HomeShellState extends State<HomeShell> {
                                 dateTime: dt,
                                 category: cat,
                                 highPriority: prio,
+                                reminderMode: remMode,
+                                customReminderAt:
+                                    remMode == EventReminderMode.custom ? customRem : null,
                               ));
                             }
                             _selectedDay = dt;
@@ -2968,7 +3647,8 @@ class _HomeShellState extends State<HomeShell> {
       context: context,
       isScrollControlled: true,
       backgroundColor: widget.isDark ? VibePalette.darkCard : VibePalette.lightCard,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
+      shape:
+          const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setM) => Padding(
           padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 22),
@@ -2977,14 +3657,19 @@ class _HomeShellState extends State<HomeShell> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('🎯 Nuovo Voto',
+                const Text('Nuovo Voto',
                     style: TextStyle(fontSize: 18.5, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 12),
                 TextField(controller: subjCtrl, decoration: fieldDeco('Materia')),
                 const SizedBox(height: 10),
                 Text('Voto: ${val.toStringAsFixed(2)}  ·  Peso: ${(weight * 100).round()}%',
                     style: const TextStyle(fontWeight: FontWeight.w800)),
-                Slider(value: val, min: 1, max: 10, divisions: 36, onChanged: (v) => setM(() => val = v)),
+                Slider(
+                    value: val,
+                    min: 1,
+                    max: 10,
+                    divisions: 36,
+                    onChanged: (v) => setM(() => val = v)),
                 Slider(
                     value: weight,
                     min: 0.25,
@@ -3008,7 +3693,8 @@ class _HomeShellState extends State<HomeShell> {
                       setState(() {
                         _grades.add(SchoolGrade(
                           id: 'g_${DateTime.now().millisecondsSinceEpoch}',
-                          subject: subjCtrl.text.trim().isEmpty ? 'Materia' : subjCtrl.text.trim(),
+                          subject:
+                              subjCtrl.text.trim().isEmpty ? 'Materia' : subjCtrl.text.trim(),
                           value: val,
                           weight: weight,
                           type: type,
@@ -3093,7 +3779,7 @@ class _ArgoSettingsTabState extends State<_ArgoSettingsTab> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('☁️ Login Registro Elettronico Argo',
+              Text('Login Registro Elettronico Argo',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: txt)),
               const SizedBox(height: 4),
               Text(
@@ -3166,7 +3852,8 @@ class _ArgoSettingsTabState extends State<_ArgoSettingsTab> {
                               _passCtrl.text.isEmpty) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                  content: Text('Inserisci Codice Scuola, Nome utente e Password.')),
+                                  content:
+                                      Text('Inserisci Codice Scuola, Nome utente e Password.')),
                             );
                             return;
                           }
@@ -3203,7 +3890,8 @@ class _ArgoSettingsTabState extends State<_ArgoSettingsTab> {
             children: [
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Promemoria automatici (17:00 e 07:15)'),
+                title: const Text('Notifiche attive (Orario 07:20 + Impegni)'),
+                subtitle: const Text('Avviso orario ogni mattina alle 07:20 e promemoria eventi'),
                 value: widget.notifyOn,
                 onChanged: widget.onToggleNotify,
               ),
