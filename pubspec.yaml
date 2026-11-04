@@ -21,6 +21,7 @@ dependencies:
 
   # Archiviazione locale offline (eventi, voti, credenziali, preferenze)
   shared_preferences: ^2.3.3
+  file_picker: ^8.1.7
 
   # Sistema di notifiche push locali programmate (giorno prima + mattina stessa)
   flutter_local_notifications: ^18.0.1
