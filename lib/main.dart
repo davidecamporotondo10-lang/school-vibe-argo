@@ -6,6 +6,7 @@ import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:http/http.dart' as http;
@@ -37,9 +38,12 @@ BoxDecoration cardDeco(Color card, Color border, [double radius = 24]) =>
 InputDecoration fieldDeco(String label, {IconData? icon, Widget? suffix}) =>
     InputDecoration(
       labelText: label,
-      prefixIcon: icon != null ? Icon(icon) : null,
+      prefixIcon: icon != null ? Icon(icon, size: 19) : null,
       suffixIcon: suffix,
-      border: const OutlineInputBorder(),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide.none,
+      ),
     );
 
 String fmtMin(int totalMinutes) {
@@ -74,7 +78,8 @@ Color subjectAccent(String subject) {
   ];
   final s = subject.trim().toLowerCase();
   if (s.isEmpty) return VibePalette.primary;
-  return palette[s.hashCode.abs() % palette.length];
+  final seed = s.codeUnits.fold<int>(0, (a, c) => a + c);
+  return palette[seed % palette.length];
 }
 
 class VibePalette {
@@ -96,31 +101,147 @@ class VibePalette {
   static const Color lightCardAlt = Color(0xFFEEF2FA);
   static const Color lightBorder = Color(0xFFDCE3F0);
 
-  static ThemeData _base(Brightness b, Color bg, Color card, Color border, Color snackBg) =>
-      ThemeData(
-        useMaterial3: true,
+  static ThemeData _base(Brightness b, Color bg, Color card, Color border, Color snackBg) {
+    final dark = b == Brightness.dark;
+    final onSurface = dark ? const Color(0xFFF2F5FA) : const Color(0xFF0B1220);
+    final mutedInk = dark ? const Color(0xFF98A6BC) : const Color(0xFF64748B);
+    final fieldFill = dark ? const Color(0xFF151D30) : const Color(0xFFF3F6FC);
+
+    final base = ThemeData(
+      useMaterial3: true,
+      brightness: b,
+      splashFactory: InkRipple.splashFactory,
+      colorScheme: ColorScheme(
         brightness: b,
-        colorScheme: ColorScheme(
-          brightness: b,
-          primary: primary,
-          onPrimary: Colors.white,
-          secondary: primaryGlow,
-          onSecondary: Colors.white,
-          error: verificaRed,
-          onError: Colors.white,
-          surface: card,
-          onSurface: b == Brightness.dark ? Colors.white : const Color(0xFF0F172A),
+        primary: primary,
+        onPrimary: Colors.white,
+        secondary: primaryGlow,
+        onSecondary: Colors.white,
+        error: verificaRed,
+        onError: Colors.white,
+        surface: card,
+        onSurface: onSurface,
+      ),
+      scaffoldBackgroundColor: bg,
+      cardColor: card,
+      dividerColor: border,
+    );
+
+    return base.copyWith(
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: snackBg,
+        elevation: 0,
+        insetPadding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+        contentTextStyle: const TextStyle(color: Colors.white, fontSize: 13, height: 1.35),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      ),
+      dividerTheme: DividerThemeData(color: border, thickness: 1, space: 1),
+      tooltipTheme: TooltipThemeData(
+        decoration: BoxDecoration(
+          color: dark ? const Color(0xFF222C44) : const Color(0xFF1E293B),
+          borderRadius: BorderRadius.circular(9),
         ),
-        scaffoldBackgroundColor: bg,
-        cardColor: card,
-        dividerColor: border,
-        snackBarTheme: SnackBarThemeData(
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: snackBg,
-          contentTextStyle: const TextStyle(color: Colors.white),
+        textStyle:
+            const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w600),
+        waitDuration: const Duration(milliseconds: 450),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: fieldFill,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        labelStyle: TextStyle(color: mutedInk, fontSize: 13.5, fontWeight: FontWeight.w500),
+        floatingLabelStyle:
+            const TextStyle(color: primary, fontSize: 12.5, fontWeight: FontWeight.w800),
+        prefixIconColor: mutedInk,
+        suffixIconColor: mutedInk,
+        hintStyle: TextStyle(color: mutedInk, fontSize: 13.5),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: primary, width: 1.6),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: alphaCol(verificaRed, 0.7)),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          minimumSize: const Size(0, 50),
+          padding: const EdgeInsets.symmetric(horizontal: 20),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          textStyle: const TextStyle(
+              fontSize: 13.5, fontWeight: FontWeight.w800, letterSpacing: 0.1),
         ),
-      );
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size(0, 48),
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          foregroundColor: dark ? const Color(0xFFE2E8F0) : const Color(0xFF334155),
+          side: BorderSide(color: border),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: dark ? const Color(0xFFA5B4FC) : primary,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800),
+        ),
+      ),
+      chipTheme: ChipThemeData(
+        backgroundColor: fieldFill,
+        selectedColor: alphaCol(primary, dark ? 0.24 : 0.16),
+        side: BorderSide(color: border),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        labelStyle: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: onSurface),
+        secondaryLabelStyle:
+            const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: primary),
+        showCheckmark: false,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      ),
+      dialogTheme: DialogTheme(
+        backgroundColor: card,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        titleTextStyle:
+            TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: onSurface),
+        contentTextStyle: TextStyle(fontSize: 13.5, height: 1.45, color: mutedInk),
+      ),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: card,
+        surfaceTintColor: Colors.transparent,
+        modalBackgroundColor: card,
+        shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      ),
+      popupMenuTheme: PopupMenuThemeData(
+        color: card,
+        surfaceTintColor: Colors.transparent,
+        elevation: 10,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        textStyle: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: onSurface),
+      ),
+      progressIndicatorTheme: const ProgressIndicatorThemeData(color: primary),
+      sliderTheme: SliderThemeData(
+        activeTrackColor: primary,
+        inactiveTrackColor: alphaCol(primary, 0.18),
+        thumbColor: primary,
+        overlayColor: alphaCol(primary, 0.16),
+        valueIndicatorColor: primary,
+      ),
+    );
+  }
 
   static ThemeData darkTheme() => _base(Brightness.dark, darkBg, darkCard, darkBorder, darkCardAlt);
   static ThemeData lightTheme() =>
@@ -1654,6 +1775,109 @@ class ArgoApiService {
 // APP ROOT & HOME SHELL (4 SEZIONI: CALENDARIO, ORARIO, VOTI, IMPOSTAZIONI)
 // ============================================================================
 
+/// Punto unico di verità per colori, superfici, ombre e spaziature.
+/// Tutti i widget leggono da qui, così l'app resta coerente in ogni schermata.
+class VibeSkin {
+  final bool dark;
+  const VibeSkin(this.dark);
+
+  bool get isDark => dark;
+
+  Color get card => dark ? VibePalette.darkCard : VibePalette.lightCard;
+  Color get cardAlt => dark ? VibePalette.darkCardAlt : VibePalette.lightCardAlt;
+  Color get border => dark ? VibePalette.darkBorder : VibePalette.lightBorder;
+  Color get txt => dark ? const Color(0xFFF2F5FA) : const Color(0xFF0B1220);
+  Color get muted => dark ? const Color(0xFF98A6BC) : const Color(0xFF64748B);
+  Color get faint => dark ? const Color(0xFF76849C) : const Color(0xFF98A2B3);
+  Color get hairline => dark ? alphaCol(Colors.white, 0.06) : alphaCol(const Color(0xFF0F172A), 0.06);
+  Color get ink => dark ? const Color(0xFF050810) : const Color(0xFFF7F9FD);
+
+  List<BoxShadow> get cardShadow => dark
+      ? [
+          BoxShadow(
+              color: alphaCol(Colors.black, 0.55),
+              blurRadius: 28,
+              offset: const Offset(0, 14),
+              spreadRadius: -6),
+        ]
+      : [
+          BoxShadow(
+              color: alphaCol(const Color(0xFF0F172A), 0.07),
+              blurRadius: 28,
+              offset: const Offset(0, 14),
+              spreadRadius: -8),
+        ];
+
+  BoxDecoration panel([double radius = 24, Color? color, Color? borderColor]) => BoxDecoration(
+        color: color ?? card,
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(color: borderColor ?? border),
+        boxShadow: cardShadow,
+      );
+}
+
+/// Piccoli token condivisi: raggi, spaziature e durate.
+class VibeMetrics {
+  static const double gap = 14;
+  static const double pagePad = 16;
+  static const Duration fast = Duration(milliseconds: 180);
+  static const Duration normal = Duration(milliseconds: 280);
+}
+
+/// Sfondo atmosferico: due aloni morbidi che danno profondità senza rumore.
+class _AmbientBackground extends StatelessWidget {
+  final bool dark;
+  const _AmbientBackground({required this.dark});
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: dark
+                  ? const [Color(0xFF0A1020), Color(0xFF05080F)]
+                  : const [Color(0xFFF7FAFF), Color(0xFFEDF2FA)],
+            ),
+          ),
+          child: Stack(
+            children: [
+              Positioned(
+                top: -120,
+                right: -80,
+                child: _glow(
+                  dark ? alphaCol(VibePalette.primary, 0.30) : alphaCol(VibePalette.primary, 0.16),
+                  320,
+                ),
+              ),
+              Positioned(
+                top: 180,
+                left: -140,
+                child: _glow(
+                  dark ? alphaCol(VibePalette.capBlue, 0.22) : alphaCol(VibePalette.capBlue, 0.12),
+                  280,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _glow(Color color, double size) => Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: RadialGradient(colors: [color, alphaCol(color, 0.0)]),
+        ),
+      );
+}
+
 class SchoolVibeApp extends StatefulWidget {
   final StorageService storage;
   const SchoolVibeApp({super.key, required this.storage});
@@ -1706,7 +1930,7 @@ class HomeShell extends StatefulWidget {
   State<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends State<HomeShell> {
+class _HomeShellState extends State<HomeShell> with SingleTickerProviderStateMixin {
   static const _chillEmptyQuotes = [
     'Agenda vuota, mente leggera.',
     'Zero scadenze in vista per questo giorno.',
@@ -1747,6 +1971,9 @@ class _HomeShellState extends State<HomeShell> {
   bool _weightedAvg = true;
   Timer? _ticker;
 
+  late final AnimationController _tabFade =
+      AnimationController(vsync: this, duration: VibeMetrics.normal, value: 1);
+
   @override
   void initState() {
     super.initState();
@@ -1759,6 +1986,7 @@ class _HomeShellState extends State<HomeShell> {
   @override
   void dispose() {
     _ticker?.cancel();
+    _tabFade.dispose();
     super.dispose();
   }
 
@@ -1877,676 +2105,1214 @@ class _HomeShellState extends State<HomeShell> {
       await _saveEvents();
       await _saveGrades();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content:
-                  Text('Sincronizzati ${mergedArgo.length} impegni e ${res.grades.length} voti.')),
-        );
+        _toast('Sincronizzati ${mergedArgo.length} impegni e ${res.grades.length} voti.', ok: true);
       }
     } catch (e) {
       final cleanErr = e.toString().replaceFirst('Exception: ', '');
       setState(() => _lastSyncError = cleanErr);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(cleanErr)));
-      }
+      if (mounted) _toast(cleanErr);
     } finally {
       if (mounted) setState(() => _syncing = false);
     }
   }
 
+  void _toast(String message, {bool ok = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 4),
+          content: Row(
+            children: [
+              Icon(
+                ok ? CupertinoIcons.checkmark_circle_fill : CupertinoIcons.exclamationmark_circle,
+                size: 19,
+                color: ok ? VibePalette.okGreen : VibePalette.interrogazioneAmber,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(message, style: const TextStyle(color: Colors.white, fontSize: 13)),
+              ),
+            ],
+          ),
+        ),
+      );
+  }
+
+  void _selectTab(int i) {
+    if (i == _tab) return;
+    HapticFeedback.selectionClick();
+    setState(() => _tab = i);
+    _tabFade.forward(from: 0.35);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final d = widget.isDark;
-    final card = d ? VibePalette.darkCard : VibePalette.lightCard;
-    final border = d ? VibePalette.darkBorder : VibePalette.lightBorder;
-
+    final s = VibeSkin(widget.isDark);
     return Scaffold(
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildHeader(d, border),
-            Expanded(
-              child: IndexedStack(
-                index: _tab,
-                children: [
-                  _buildDashboardTab(d, card, border),
-                  _buildTimetableTab(d, card, border),
-                  _buildGradesTab(d, card, border),
-                  _SettingsTab(
-                    isDark: d,
-                    cardColor: card,
-                    borderColor: border,
-                    creds: _argo,
-                    syncing: _syncing,
-                    lastError: _lastSyncError,
-                    notifyOn: _notifyOn,
-                    morningNotifyOn: _morningNotifyOn,
-                    onSync: (s, u, p) => _runArgoSync(s, u, p),
-                    onDemo: (s, u, p) => _runArgoSync(s, u, p, demo: true),
-                    onToggleNotify: (v) async {
-                      setState(() => _notifyOn = v);
-                      await widget.storage.saveNotifyEnabled(v);
-                      await _resyncNotifications();
-                    },
-                    onToggleMorningNotify: (v) async {
-                      setState(() => _morningNotifyOn = v);
-                      await widget.storage.saveMorningNotifyEnabled(v);
-                      await _resyncNotifications();
-                    },
-                    onReset: () async {
-                      await widget.storage.clearAll();
-                      setState(() {
-                        _events = [];
-                        _grades = [];
-                        _deletedArgoIds = {};
-                        _argo = const ArgoCredentials();
-                        _lastSyncError = null;
-                      });
-                      await _resyncNotifications();
-                    },
+      backgroundColor: Colors.transparent,
+      extendBody: true,
+      body: Stack(
+        children: [
+          _AmbientBackground(dark: widget.isDark),
+          SafeArea(
+            bottom: false,
+            child: Column(
+              children: [
+                _buildHeader(s),
+                Expanded(
+                  child: FadeTransition(
+                    opacity: CurvedAnimation(parent: _tabFade, curve: Curves.easeOut),
+                    child: IndexedStack(
+                      index: _tab,
+                      children: [
+                        _buildDashboardTab(s),
+                        _buildTimetableTab(s),
+                        _buildGradesTab(s),
+                        _SettingsTab(
+                          isDark: widget.isDark,
+                          cardColor: s.card,
+                          borderColor: s.border,
+                          creds: _argo,
+                          syncing: _syncing,
+                          lastError: _lastSyncError,
+                          notifyOn: _notifyOn,
+                          morningNotifyOn: _morningNotifyOn,
+                          onSync: (s2, u, p) => _runArgoSync(s2, u, p),
+                          onDemo: (s2, u, p) => _runArgoSync(s2, u, p, demo: true),
+                          onToggleNotify: (v) async {
+                            setState(() => _notifyOn = v);
+                            await widget.storage.saveNotifyEnabled(v);
+                            await _resyncNotifications();
+                          },
+                          onToggleMorningNotify: (v) async {
+                            setState(() => _morningNotifyOn = v);
+                            await widget.storage.saveMorningNotifyEnabled(v);
+                            await _resyncNotifications();
+                          },
+                          onReset: () async {
+                            await widget.storage.clearAll();
+                            setState(() {
+                              _events = [];
+                              _grades = [];
+                              _deletedArgoIds = {};
+                              _argo = const ArgoCredentials();
+                              _lastSyncError = null;
+                            });
+                            await _resyncNotifications();
+                          },
+                        ),
+                      ],
+                    ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       floatingActionButton: (_tab == 0 || _tab == 2)
           ? Container(
+              margin: const EdgeInsets.only(bottom: 6),
               decoration: BoxDecoration(
-                shape: BoxShape.circle,
                 gradient:
                     const LinearGradient(colors: [VibePalette.primary, VibePalette.primaryGlow]),
+                shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
                       color: alphaCol(VibePalette.primary, 0.45),
-                      blurRadius: 18,
-                      offset: const Offset(0, 6)),
+                      blurRadius: 22,
+                      offset: const Offset(0, 10)),
                 ],
               ),
               child: FloatingActionButton(
+                heroTag: 'vibe_fab',
                 elevation: 0,
                 backgroundColor: Colors.transparent,
                 foregroundColor: Colors.white,
-                onPressed: () =>
-                    _tab == 0 ? _showEventModal(baseDate: _selectedDay) : _showAddGradeModal(),
-                child: const Icon(CupertinoIcons.add, size: 28),
+                shape: const CircleBorder(),
+                tooltip: _tab == 0 ? 'Nuovo impegno' : 'Nuovo voto',
+                onPressed: () {
+                  HapticFeedback.mediumImpact();
+                  _tab == 0 ? _showEventModal(baseDate: _selectedDay) : _showAddGradeModal();
+                },
+                child: const Icon(CupertinoIcons.add, size: 26),
               ),
             )
           : null,
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(color: card, border: Border(top: BorderSide(color: border))),
-        child: NavigationBar(
-          height: 66,
-          backgroundColor: Colors.transparent,
-          indicatorColor: alphaCol(VibePalette.primary, 0.2),
-          selectedIndex: _tab,
-          onDestinationSelected: (i) => setState(() => _tab = i),
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(CupertinoIcons.calendar),
-              selectedIcon: Icon(CupertinoIcons.calendar, color: VibePalette.primary),
-              label: 'Calendario',
-            ),
-            NavigationDestination(
-              icon: Icon(CupertinoIcons.clock),
-              selectedIcon: Icon(CupertinoIcons.clock_fill, color: VibePalette.primary),
-              label: 'Orario',
-            ),
-            NavigationDestination(
-              icon: Icon(CupertinoIcons.chart_bar_square),
-              selectedIcon: Icon(CupertinoIcons.chart_bar_square_fill, color: VibePalette.primary),
-              label: 'Voti',
-            ),
-            NavigationDestination(
-              icon: Icon(CupertinoIcons.gear),
-              selectedIcon: Icon(CupertinoIcons.gear_solid, color: VibePalette.primary),
-              label: 'Impostazioni',
-            ),
-          ],
-        ),
-      ),
+      bottomNavigationBar: _buildNavBar(s),
     );
   }
 
-  Widget _buildHeader(bool d, Color border) {
-    final txt = d ? Colors.white : const Color(0xFF0F172A);
-    final muted = d ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
+  // --------------------------------------------------------------------------
+  // HEADER
+  // --------------------------------------------------------------------------
+
+  Widget _buildHeader(VibeSkin s) {
+    final hour = DateTime.now().hour;
+    final greeting = hour < 12 ? 'Buongiorno' : (hour < 18 ? 'Buon pomeriggio' : 'Buonasera');
+    final name = _argo.studentName.trim();
+    final notifOn = _notifyOn || _morningNotifyOn;
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 12, 18, 8),
+      padding: const EdgeInsets.fromLTRB(VibeMetrics.pagePad, 10, 12, 10),
       child: Row(
         children: [
           Container(
             width: 46,
             height: 46,
             decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: alphaCol(VibePalette.capBlue, 0.35)),
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [VibePalette.primary, VibePalette.primaryGlow],
+              ),
+              borderRadius: BorderRadius.circular(15),
               boxShadow: [
                 BoxShadow(
-                    color: alphaCol(VibePalette.capBlue, 0.28),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4)),
+                    color: alphaCol(VibePalette.primary, 0.42),
+                    blurRadius: 16,
+                    offset: const Offset(0, 7)),
               ],
             ),
-            child: const Icon(Icons.school_rounded, color: VibePalette.capBlue, size: 27),
+            child: const Icon(Icons.school_rounded, color: Colors.white, size: 25),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
+                Text(
+                  greeting.toUpperCase(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.4,
+                    color: s.faint,
+                  ),
+                ),
+                const SizedBox(height: 1),
                 Row(
                   children: [
                     Flexible(
-                      child: Text('Calendario Scuola',
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: txt)),
+                      child: Text(
+                        name.isNotEmpty ? name : 'Calendario Scuola',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 17.5,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.4,
+                          color: s.txt,
+                        ),
+                      ),
                     ),
                     if (_argo.lastSync != null) ...[
-                      const SizedBox(width: 6),
+                      const SizedBox(width: 7),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: alphaCol(VibePalette.okGreen, 0.16),
-                          borderRadius: BorderRadius.circular(7),
+                          color: alphaCol(VibePalette.okGreen, 0.15),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: alphaCol(VibePalette.okGreen, 0.4)),
                         ),
-                        child: const Text('ARGO',
-                            style: TextStyle(
-                                fontSize: 9.5,
-                                fontWeight: FontWeight.w900,
-                                color: VibePalette.okGreen)),
+                        child: const Text(
+                          'ARGO',
+                          style: TextStyle(
+                              fontSize: 8.5,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.4,
+                              color: VibePalette.okGreen),
+                        ),
                       ),
                     ],
                   ],
                 ),
-                Text(
-                  _argo.studentName.isNotEmpty
-                      ? _argo.studentName
-                      : 'verifiche, orario e registro',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 12.5, color: muted),
-                ),
               ],
             ),
           ),
-          _iconCircleBtn(
-            (_notifyOn || _morningNotifyOn) ? CupertinoIcons.bell : CupertinoIcons.bell_slash,
-            d,
-            border,
-            () => setState(() => _tab = 3),
+          _headerButton(
+            s,
+            notifOn ? CupertinoIcons.bell_fill : CupertinoIcons.bell_slash,
+            onTap: () => _selectTab(3),
+            dot: notifOn,
           ),
-          const SizedBox(width: 9),
-          _iconCircleBtn(
-            d ? CupertinoIcons.moon_stars : CupertinoIcons.sun_max,
-            d,
-            border,
-            widget.onToggleTheme,
+          const SizedBox(width: 8),
+          _headerButton(
+            s,
+            widget.isDark ? CupertinoIcons.moon_stars_fill : CupertinoIcons.sun_max_fill,
+            onTap: widget.onToggleTheme,
           ),
         ],
       ),
     );
   }
 
-  Widget _iconCircleBtn(IconData icon, bool d, Color border, VoidCallback onTap) => InkWell(
-        borderRadius: BorderRadius.circular(22),
-        onTap: onTap,
-        child: Container(
-          width: 42,
-          height: 42,
-          decoration: BoxDecoration(
-            color: d ? VibePalette.darkCardAlt : Colors.white,
-            shape: BoxShape.circle,
-            border: Border.all(color: border),
-          ),
-          child:
-              Icon(icon, size: 19, color: d ? const Color(0xFFE2E8F0) : const Color(0xFF1E293B)),
+  Widget _headerButton(VibeSkin s, IconData icon,
+      {required VoidCallback onTap, bool dot = false}) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: 42,
+        height: 42,
+        decoration: BoxDecoration(
+          color: s.card,
+          shape: BoxShape.circle,
+          border: Border.all(color: s.border),
+          boxShadow: s.cardShadow,
+        ),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Icon(icon, size: 18, color: s.txt),
+            if (dot)
+              Positioned(
+                top: 11,
+                right: 11,
+                child: Container(
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    color: VibePalette.okGreen,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: s.card, width: 1.5),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // --------------------------------------------------------------------------
+  // BOTTOM NAVIGATION (capsule flottante)
+  // --------------------------------------------------------------------------
+
+  Widget _buildNavBar(VibeSkin s) {
+    final items = [
+      (CupertinoIcons.calendar, CupertinoIcons.calendar, 'Calendario'),
+      (CupertinoIcons.clock, CupertinoIcons.clock_fill, 'Orario'),
+      (CupertinoIcons.chart_bar_square, CupertinoIcons.chart_bar_square_fill, 'Voti'),
+      (CupertinoIcons.gear, CupertinoIcons.gear_solid, 'Impostazioni'),
+    ];
+
+    return SafeArea(
+      top: false,
+      minimum: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+      child: Container(
+        padding: const EdgeInsets.all(6),
+        decoration: BoxDecoration(
+          color: s.card,
+          borderRadius: BorderRadius.circular(26),
+          border: Border.all(color: s.border),
+          boxShadow: [
+            BoxShadow(
+                color: alphaCol(s.dark ? Colors.black : const Color(0xFF0F172A), 0.22),
+                blurRadius: 26,
+                offset: const Offset(0, 10),
+                spreadRadius: -6),
+          ],
+        ),
+        child: Row(
+          children: [
+            for (int i = 0; i < items.length; i++)
+              Expanded(
+                child: _navItem(
+                  s,
+                  icon: items[i].$1,
+                  activeIcon: items[i].$2,
+                  label: items[i].$3,
+                  active: _tab == i,
+                  onTap: () => _selectTab(i),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _navItem(
+    VibeSkin s, {
+    required IconData icon,
+    required IconData activeIcon,
+    required String label,
+    required bool active,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: VibeMetrics.fast,
+        curve: Curves.easeOut,
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+        decoration: BoxDecoration(
+          gradient: active
+              ? const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [VibePalette.primary, VibePalette.primaryGlow],
+                )
+              : null,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: active
+              ? [
+                  BoxShadow(
+                      color: alphaCol(VibePalette.primary, 0.35),
+                      blurRadius: 14,
+                      offset: const Offset(0, 6)),
+                ]
+              : null,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              active ? activeIcon : icon,
+              size: 20,
+              color: active ? Colors.white : s.muted,
+            ),
+            const SizedBox(height: 3),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 9.5,
+                fontWeight: active ? FontWeight.w800 : FontWeight.w600,
+                letterSpacing: -0.1,
+                color: active ? Colors.white : s.faint,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // --------------------------------------------------------------------------
+  // ELEMENTI CONDIVISI
+  // --------------------------------------------------------------------------
+
+  Widget _sectionLabel(VibeSkin s, String text, IconData icon) => Padding(
+        padding: const EdgeInsets.only(left: 4, bottom: 8),
+        child: Row(
+          children: [
+            Icon(icon, size: 14, color: VibePalette.primary),
+            const SizedBox(width: 6),
+            Text(
+              text.toUpperCase(),
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.1,
+                color: s.faint,
+              ),
+            ),
+          ],
         ),
       );
 
+  Widget _pill({
+    required VibeSkin s,
+    required String label,
+    required bool selected,
+    required Color accent,
+    required VoidCallback onTap,
+    IconData? icon,
+  }) {
+    final fg = selected ? Colors.white : (s.dark ? const Color(0xFFCBD5E1) : const Color(0xFF334155));
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: VibeMetrics.fast,
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+        decoration: BoxDecoration(
+          gradient: selected
+              ? LinearGradient(colors: [accent, alphaCol(accent, 0.75)])
+              : null,
+          color: selected ? null : s.cardAlt,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: selected ? Colors.transparent : s.border),
+          boxShadow: selected
+              ? [
+                  BoxShadow(
+                      color: alphaCol(accent, 0.35),
+                      blurRadius: 12,
+                      offset: const Offset(0, 5)),
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, size: 13, color: fg),
+              const SizedBox(width: 5),
+            ],
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                color: fg,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _softIconButton(VibeSkin s, IconData icon, VoidCallback onTap, {String? tip}) {
+    final btn = GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: 32,
+        height: 32,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: s.cardAlt,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: s.border),
+        ),
+        child: Icon(icon, size: 15, color: s.muted),
+      ),
+    );
+    return tip == null ? btn : Tooltip(message: tip, child: btn);
+  }
+
   // --------------------------------------------------------------------------
-  // TAB 1: CALENDARIO & SCADENZE (SENZA ALTA PRIORITÀ, SENZA EMOJI CATEGORIE)
+  // TAB 1: CALENDARIO & SCADENZE
   // --------------------------------------------------------------------------
 
-  Widget _buildDashboardTab(bool d, Color card, Color border) {
-    final txt = d ? Colors.white : const Color(0xFF0F172A);
-    final muted = d ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
+  Widget _buildDashboardTab(VibeSkin s) {
     final rawMonth = DateFormat('MMMM yyyy', 'it_IT').format(_focusedDay);
     final monthTitle = rawMonth[0].toUpperCase() + rawMonth.substring(1);
-    final rawDay = DateFormat('EEEE d MMMM', 'it_IT').format(_selectedDay);
-    final dayTitle =
-        rawDay.split(' ').map((w) => w.isEmpty ? w : w[0].toUpperCase() + w.substring(1)).join(' ');
     final dayEvents = _eventsForDay(_selectedDay);
+    final nextEv = _upcomingFiltered.where((e) => !e.completed).firstOrNull;
 
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+      padding: const EdgeInsets.fromLTRB(VibeMetrics.pagePad, 4, VibeMetrics.pagePad, 120),
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: _kpiBox(
-                CupertinoIcons.calendar_today,
-                const [Color(0xFF635BFF), Color(0xFF8B5CF6)],
-                _next7DaysCount,
-                'Prossimi 7 giorni',
-                card,
-                border,
-                txt,
-                muted,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _kpiBox(
-                CupertinoIcons.checkmark_rectangle,
-                const [Color(0xFF00B894), Color(0xFF00CEC9)],
-                _todoTotal,
-                'Da fare in totale',
-                card,
-                border,
-                txt,
-                muted,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 15),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: Container(
-            padding: const EdgeInsets.all(4),
-            decoration: cardDeco(card, border, 28),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _segBtn(!_isListView, CupertinoIcons.calendar, 'Calendario', muted,
-                    () => setState(() => _isListView = false)),
-                _segBtn(_isListView, CupertinoIcons.list_bullet, 'Lista', muted,
-                    () => setState(() => _isListView = true)),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 14),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            _filterChip('Tutti', _catFilter == null, VibePalette.primary, d, card, border,
-                () => setState(() => _catFilter = null)),
-            for (final c in EventCategory.values)
-              _filterChip(c.label, _catFilter == c, c.color, d, card, border,
-                  () => setState(() => _catFilter = c)),
-          ],
-        ),
+        _nextUpHero(s, nextEv),
+        const SizedBox(height: 12),
+        _statsStrip(s),
         const SizedBox(height: 16),
-        if (!_isListView) ...[
-          Container(
-            padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
-            decoration: cardDeco(card, border),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    const SizedBox(width: 6),
-                    Expanded(
-                        child: Text(monthTitle,
-                            style:
-                                TextStyle(fontSize: 18.5, fontWeight: FontWeight.w800, color: txt))),
-                    InkWell(
-                      onTap: () => setState(() => _calFormat = _calFormat == CalendarFormat.month
-                          ? CalendarFormat.week
-                          : CalendarFormat.month),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                        decoration: BoxDecoration(
-                            color: alphaCol(VibePalette.primary, 0.14),
-                            borderRadius: BorderRadius.circular(10)),
-                        child: Text(_calFormat == CalendarFormat.month ? 'Mese' : 'Sett.',
-                            style: const TextStyle(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w700,
-                                color: VibePalette.primary)),
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: () => setState(() {
-                        _focusedDay = DateTime.now();
-                        _selectedDay = DateTime.now();
-                      }),
-                      child: const Text('Oggi',
-                          style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF818CF8))),
-                    ),
-                    IconButton(
-                      visualDensity: VisualDensity.compact,
-                      icon: Icon(CupertinoIcons.chevron_left, size: 17, color: muted),
-                      onPressed: () => setState(
-                          () => _focusedDay = DateTime(_focusedDay.year, _focusedDay.month - 1, 1)),
-                    ),
-                    IconButton(
-                      visualDensity: VisualDensity.compact,
-                      icon: Icon(CupertinoIcons.chevron_right, size: 17, color: muted),
-                      onPressed: () => setState(
-                          () => _focusedDay = DateTime(_focusedDay.year, _focusedDay.month + 1, 1)),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                TableCalendar<SchoolEvent>(
-                  locale: 'it_IT',
-                  firstDay: DateTime.utc(2023, 9, 1),
-                  lastDay: DateTime.utc(2030, 8, 31),
-                  focusedDay: _focusedDay,
-                  calendarFormat: _calFormat,
-                  startingDayOfWeek: StartingDayOfWeek.monday,
-                  availableGestures: AvailableGestures.horizontalSwipe,
-                  headerVisible: false,
-                  selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
-                  eventLoader: _eventsForDay,
-                  onDaySelected: (sel, foc) => setState(() {
-                    _selectedDay = sel;
-                    _focusedDay = foc;
-                    _emptyIdx = (_emptyIdx + 1) % _chillEmptyQuotes.length;
-                  }),
-                  onPageChanged: (foc) => setState(() => _focusedDay = foc),
-                  daysOfWeekHeight: 28,
-                  rowHeight: 48,
-                  daysOfWeekStyle: DaysOfWeekStyle(
-                    dowTextFormatter: (dt, loc) =>
-                        DateFormat.E(loc).format(dt).replaceAll('.', '').toUpperCase(),
-                    weekdayStyle:
-                        TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: muted),
-                    weekendStyle:
-                        TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: muted),
-                  ),
-                  calendarStyle: CalendarStyle(
-                    defaultTextStyle: TextStyle(fontWeight: FontWeight.w700, color: txt),
-                    weekendTextStyle: TextStyle(fontWeight: FontWeight.w700, color: txt),
-                    outsideTextStyle: TextStyle(color: alphaCol(muted, 0.36)),
-                    todayDecoration: BoxDecoration(
-                      color: alphaCol(VibePalette.primary, 0.2),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: VibePalette.primary, width: 1.4),
-                    ),
-                    todayTextStyle: TextStyle(fontWeight: FontWeight.w800, color: txt),
-                    selectedDecoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                          colors: [VibePalette.primary, VibePalette.primaryGlow]),
-                      borderRadius: BorderRadius.circular(14),
-                      boxShadow: [
-                        BoxShadow(
-                            color: alphaCol(VibePalette.primary, 0.4),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4)),
-                      ],
-                    ),
-                    selectedTextStyle:
-                        const TextStyle(fontWeight: FontWeight.w800, color: Colors.white),
-                  ),
-                  calendarBuilders: CalendarBuilders(
-                    markerBuilder: (_, __, evs) => evs.isEmpty
-                        ? const SizedBox.shrink()
-                        : Positioned(
-                            bottom: 4,
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: evs
-                                  .take(4)
-                                  .map((e) => Container(
-                                        width: 6,
-                                        height: 6,
-                                        margin: const EdgeInsets.symmetric(horizontal: 1.5),
-                                        decoration: BoxDecoration(
-                                            color: e.category.color, shape: BoxShape.circle),
-                                      ))
-                                  .toList(),
-                            ),
-                          ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Divider(color: border, height: 1),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 18,
-                  runSpacing: 8,
-                  children: EventCategory.values
-                      .map((c) => Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Container(
-                                  width: 9,
-                                  height: 9,
-                                  decoration:
-                                      BoxDecoration(color: c.color, shape: BoxShape.circle)),
-                              const SizedBox(width: 6),
-                              Text(c.label,
-                                  style: TextStyle(
-                                      fontSize: 12, fontWeight: FontWeight.w600, color: muted)),
-                            ],
-                          ))
-                      .toList(),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: cardDeco(card, border),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                        child: Text(dayTitle,
-                            style:
-                                TextStyle(fontSize: 17.5, fontWeight: FontWeight.w800, color: txt))),
-                    InkWell(
-                      borderRadius: BorderRadius.circular(20),
-                      onTap: () => _showEventModal(baseDate: _selectedDay),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
-                        decoration: BoxDecoration(
-                          color: alphaCol(VibePalette.primary, 0.16),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: alphaCol(VibePalette.primary, 0.4)),
-                        ),
-                        child: const Text('+ Aggiungi',
-                            style: TextStyle(
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF818CF8))),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                if (dayEvents.isEmpty)
-                  CustomPaint(
-                    painter: _DashedRRectPainter(color: border, radius: 20),
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 18),
-                      decoration: BoxDecoration(
-                        color:
-                            d ? alphaCol(VibePalette.darkCardAlt, 0.45) : VibePalette.lightCardAlt,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Column(
-                        children: [
-                          Icon(CupertinoIcons.calendar_badge_minus, size: 32, color: muted),
-                          const SizedBox(height: 10),
-                          Text(_chillEmptyQuotes[_emptyIdx],
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                  fontSize: 14, fontWeight: FontWeight.w600, color: muted)),
-                        ],
-                      ),
-                    ),
-                  )
-                else
-                  ...dayEvents.map((e) => _eventCardTile(e, d, border, txt, muted)),
-              ],
-            ),
-          ),
-        ] else
-          _buildListWithCountdown(d, card, border, txt, muted),
-      ],
-    );
-  }
-
-  Widget _kpiBox(IconData icon, List<Color> grad, int val, String label, Color card, Color border,
-          Color txt, Color muted) =>
-      Container(
-        padding: const EdgeInsets.all(14),
-        decoration: cardDeco(card, border, 22),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12), gradient: LinearGradient(colors: grad)),
-              child: Icon(icon, color: Colors.white, size: 19),
-            ),
-            const SizedBox(height: 12),
-            Text('$val', style: TextStyle(fontSize: 25, fontWeight: FontWeight.w800, color: txt)),
-            const SizedBox(height: 2),
-            Text(label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: muted)),
-          ],
-        ),
-      );
-
-  Widget _segBtn(bool active, IconData icon, String label, Color muted, VoidCallback onTap) =>
-      GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(24),
-            gradient: active
-                ? const LinearGradient(colors: [VibePalette.primary, VibePalette.primaryGlow])
-                : null,
-          ),
-          child: Row(
+        _viewSwitcher(s),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 38,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
             children: [
-              Icon(icon, size: 15, color: active ? Colors.white : muted),
-              const SizedBox(width: 6),
-              Text(label,
-                  style: TextStyle(
-                      fontSize: 13, fontWeight: FontWeight.w700, color: active ? Colors.white : muted)),
+              _pill(
+                s: s,
+                label: 'Tutti',
+                selected: _catFilter == null,
+                accent: VibePalette.primary,
+                onTap: () => setState(() => _catFilter = null),
+              ),
+              for (final c in EventCategory.values) ...[
+                const SizedBox(width: 8),
+                _pill(
+                  s: s,
+                  label: c.label,
+                  selected: _catFilter == c,
+                  accent: c.color,
+                  onTap: () => setState(() => _catFilter = c),
+                ),
+              ],
             ],
           ),
         ),
-      );
-
-  Widget _filterChip(String text, bool sel, Color accent, bool d, Color card, Color border,
-          VoidCallback onTap) =>
-      GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
-          decoration: BoxDecoration(
-            color: sel ? alphaCol(accent, 0.2) : card,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: sel ? accent : border, width: sel ? 1.4 : 1.0),
-          ),
-          child: Text(
-            text,
-            style: TextStyle(
-              fontSize: 12.5,
-              fontWeight: sel ? FontWeight.w700 : FontWeight.w500,
-              color: sel
-                  ? (d ? Colors.white : accent)
-                  : (d ? const Color(0xFFCBD5E1) : const Color(0xFF334155)),
-            ),
-          ),
-        ),
-      );
-
-  Widget _buildListWithCountdown(bool d, Color card, Color border, Color txt, Color muted) {
-    final list = _upcomingFiltered;
-    final nextEv = list.where((e) => !e.completed).firstOrNull;
-    final diff = nextEv?.dateTime.difference(DateTime.now()) ?? Duration.zero;
-
-    return Column(
-      children: [
-        if (nextEv != null) ...[
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(24),
-              gradient: LinearGradient(colors: [nextEv.category.color, VibePalette.primary]),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'CONTO ALLA ROVESCIA · ${nextEv.category.label.toUpperCase()}',
-                  style:
-                      const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white70),
-                ),
-                const SizedBox(height: 6),
-                Text('${nextEv.subject} — ${nextEv.title}',
-                    style: const TextStyle(
-                        fontSize: 17, fontWeight: FontWeight.w800, color: Colors.white)),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    _cdBox('${max(0, diff.inDays)}', 'GIORNI'),
-                    const SizedBox(width: 8),
-                    _cdBox('${max(0, diff.inHours % 24)}', 'ORE'),
-                    const SizedBox(width: 8),
-                    _cdBox('${max(0, diff.inMinutes % 60)}', 'MIN'),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-        ],
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(18),
-          decoration: cardDeco(card, border),
-          child: list.isEmpty
-              ? Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 26),
-                  child: Text('Nessuna verifica o interrogazione in programma.',
-                      textAlign: TextAlign.center, style: TextStyle(color: muted)),
-                )
-              : Column(children: list.map((e) => _eventCardTile(e, d, border, txt, muted)).toList()),
-        ),
+        const SizedBox(height: 14),
+        if (!_isListView) ...[
+          _calendarCard(s, monthTitle),
+          const SizedBox(height: 14),
+          _dayAgendaCard(s, dayEvents),
+        ] else
+          _buildListWithCountdown(s),
       ],
     );
   }
 
-  Widget _cdBox(String val, String unit) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+  Widget _nextUpHero(VibeSkin s, SchoolEvent? ev) {
+    if (ev == null) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-            color: alphaCol(Colors.black, 0.24), borderRadius: BorderRadius.circular(12)),
+          borderRadius: BorderRadius.circular(26),
+          color: s.card,
+          border: Border.all(color: s.border),
+          boxShadow: s.cardShadow,
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: alphaCol(VibePalette.okGreen, 0.14),
+                borderRadius: BorderRadius.circular(15),
+              ),
+              child: const Icon(CupertinoIcons.sparkles, color: VibePalette.okGreen, size: 22),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Tutto sotto controllo',
+                      style: TextStyle(
+                          fontSize: 15.5, fontWeight: FontWeight.w800, color: s.txt)),
+                  const SizedBox(height: 3),
+                  Text('Nessun impegno in arrivo: buona giornata.',
+                      style: TextStyle(fontSize: 12.5, color: s.muted)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final diff = ev.dateTime.difference(DateTime.now());
+    final grad = _heroGradient(ev.category);
+    return GestureDetector(
+      onTap: () => _showEventModal(existing: ev),
+      child: Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(26),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: grad,
+          ),
+          boxShadow: [
+            BoxShadow(
+                color: alphaCol(grad.last, 0.45),
+                blurRadius: 26,
+                offset: const Offset(0, 12),
+                spreadRadius: -6),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(26),
+          child: Stack(
+            children: [
+              Positioned(
+                right: -40,
+                top: -50,
+                child: Container(
+                  width: 150,
+                  height: 150,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: alphaCol(Colors.white, 0.10),
+                  ),
+                ),
+              ),
+              Positioned(
+                right: 40,
+                bottom: -70,
+                child: Container(
+                  width: 120,
+                  height: 120,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: alphaCol(Colors.white, 0.07),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: alphaCol(Colors.white, 0.18),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: alphaCol(Colors.white, 0.25)),
+                          ),
+                          child: Text(
+                            ev.category.label.toUpperCase(),
+                            style: const TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.9,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'PROSSIMO IMPEGNO',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.1,
+                              color: alphaCol(Colors.white, 0.75),
+                            ),
+                          ),
+                        ),
+                        Text(
+                          _countdownText(ev.dateTime),
+                          style: const TextStyle(
+                              fontSize: 11.5, fontWeight: FontWeight.w800, color: Colors.white),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      ev.subject,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.6,
+                        color: alphaCol(Colors.white, 0.82),
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      ev.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 18.5,
+                        fontWeight: FontWeight.w800,
+                        height: 1.22,
+                        letterSpacing: -0.4,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Icon(CupertinoIcons.calendar,
+                            size: 12, color: alphaCol(Colors.white, 0.8)),
+                        const SizedBox(width: 5),
+                        Flexible(
+                          child: Text(
+                            DateFormat('EEE d MMM · HH:mm', 'it_IT').format(ev.dateTime),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
+                                color: alphaCol(Colors.white, 0.85)),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(child: _cdBox('${max(0, diff.inDays)}', 'GIORNI')),
+                        const SizedBox(width: 8),
+                        Expanded(child: _cdBox('${max(0, diff.inHours % 24)}', 'ORE')),
+                        const SizedBox(width: 8),
+                        Expanded(child: _cdBox('${max(0, diff.inMinutes % 60)}', 'MIN')),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<Color> _heroGradient(EventCategory c) {
+    switch (c) {
+      case EventCategory.verifica:
+        return const [Color(0xFFF44E62), Color(0xFFAF1F53)];
+      case EventCategory.interrogazione:
+        return const [Color(0xFFFFA53D), Color(0xFFE2591B)];
+      case EventCategory.altro:
+        return const [Color(0xFF8B5CF6), Color(0xFF4338CA)];
+    }
+  }
+
+  Widget _cdBox(String val, String unit) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+        decoration: BoxDecoration(
+          color: alphaCol(Colors.black, 0.22),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: alphaCol(Colors.white, 0.12)),
+        ),
         child: Column(
           children: [
             Text(val,
                 style: const TextStyle(
-                    fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white)),
+                    fontSize: 17, fontWeight: FontWeight.w900, color: Colors.white, height: 1.1)),
             Text(unit,
-                style: const TextStyle(
-                    fontSize: 9.5, fontWeight: FontWeight.w700, color: Colors.white70)),
+                style: TextStyle(
+                    fontSize: 8.5,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.6,
+                    color: alphaCol(Colors.white, 0.7))),
           ],
         ),
       );
+
+  Widget _statsStrip(VibeSkin s) {
+    final today = DateTime.now();
+    final todayCount =
+        _events.where((e) => isSameDay(e.dateTime, today) && !e.completed).length;
+
+    Widget cell(IconData icon, Color color, int value, String label) => Expanded(
+          child: Column(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: alphaCol(color, 0.14),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, size: 16, color: color),
+              ),
+              const SizedBox(height: 7),
+              Text('$value',
+                  style: TextStyle(
+                      fontSize: 20, fontWeight: FontWeight.w900, color: s.txt, height: 1.05)),
+              const SizedBox(height: 2),
+              Text(label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: s.faint)),
+            ],
+          ),
+        );
+
+    Widget divider() => Container(width: 1, height: 44, color: s.hairline);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+      decoration: s.panel(22),
+      child: Row(
+        children: [
+          cell(CupertinoIcons.calendar_badge_plus, VibePalette.primary, _next7DaysCount,
+              'Prossimi 7 giorni'),
+          divider(),
+          cell(CupertinoIcons.checkmark_rectangle, VibePalette.okGreen, _todoTotal, 'Da fare'),
+          divider(),
+          cell(CupertinoIcons.bolt_fill, VibePalette.interrogazioneAmber, todayCount, 'Oggi'),
+        ],
+      ),
+    );
+  }
+
+  Widget _viewSwitcher(VibeSkin s) {
+    Widget item(bool listMode, IconData icon, String label) {
+      final active = _isListView == listMode;
+      return Expanded(
+        child: GestureDetector(
+          onTap: () => setState(() => _isListView = listMode),
+          behavior: HitTestBehavior.opaque,
+          child: Center(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 15, color: active ? Colors.white : s.muted),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: active ? FontWeight.w800 : FontWeight.w600,
+                    color: active ? Colors.white : s.muted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      height: 44,
+      padding: const EdgeInsets.all(4),
+      decoration: s.panel(22),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final half = constraints.maxWidth / 2;
+          return Stack(
+            children: [
+              AnimatedAlign(
+                alignment: _isListView ? Alignment.centerRight : Alignment.centerLeft,
+                duration: VibeMetrics.normal,
+                curve: Curves.easeOutCubic,
+                child: Container(
+                  width: half,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                        colors: [VibePalette.primary, VibePalette.primaryGlow]),
+                    borderRadius: BorderRadius.circular(18),
+                    boxShadow: [
+                      BoxShadow(
+                          color: alphaCol(VibePalette.primary, 0.32),
+                          blurRadius: 12,
+                          offset: const Offset(0, 5)),
+                    ],
+                  ),
+                ),
+              ),
+              Row(
+                children: [
+                  item(false, CupertinoIcons.calendar, 'Calendario'),
+                  item(true, CupertinoIcons.list_bullet, 'Lista'),
+                ],
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _calendarCard(VibeSkin s, String monthTitle) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 14, 12, 14),
+      decoration: s.panel(24),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  monthTitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.w800, letterSpacing: -0.5, color: s.txt),
+                ),
+              ),
+              GestureDetector(
+                onTap: () => setState(() => _calFormat = _calFormat == CalendarFormat.month
+                    ? CalendarFormat.week
+                    : CalendarFormat.month),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: s.cardAlt,
+                    borderRadius: BorderRadius.circular(11),
+                    border: Border.all(color: s.border),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _calFormat == CalendarFormat.month
+                            ? CupertinoIcons.calendar
+                            : CupertinoIcons.calendar_today,
+                        size: 13,
+                        color: s.dark ? const Color(0xFFA5B4FC) : VibePalette.primary,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        _calFormat == CalendarFormat.month ? 'Mese' : 'Sett.',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w800,
+                          color: s.dark ? const Color(0xFFA5B4FC) : VibePalette.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  color: s.cardAlt,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: s.border),
+                ),
+                child: Row(
+                  children: [
+                    _softIconButton(
+                      s,
+                      CupertinoIcons.chevron_left,
+                      () => setState(() =>
+                          _focusedDay = DateTime(_focusedDay.year, _focusedDay.month - 1, 1)),
+                    ),
+                    _softIconButton(
+                      s,
+                      CupertinoIcons.chevron_right,
+                      () => setState(() =>
+                          _focusedDay = DateTime(_focusedDay.year, _focusedDay.month + 1, 1)),
+                    ),
+                  ],
+                ),
+              ),
+              const Spacer(),
+              GestureDetector(
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  setState(() {
+                    _focusedDay = DateTime.now();
+                    _selectedDay = DateTime.now();
+                  });
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: alphaCol(VibePalette.primary, 0.13),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: alphaCol(VibePalette.primary, 0.35)),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(CupertinoIcons.location_solid, size: 12, color: Color(0xFF818CF8)),
+                      SizedBox(width: 5),
+                      Text('Oggi',
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF818CF8))),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          TableCalendar<SchoolEvent>(
+            locale: 'it_IT',
+            firstDay: DateTime.utc(2023, 9, 1),
+            lastDay: DateTime.utc(2030, 8, 31),
+            focusedDay: _focusedDay,
+            calendarFormat: _calFormat,
+            startingDayOfWeek: StartingDayOfWeek.monday,
+            availableGestures: AvailableGestures.horizontalSwipe,
+            headerVisible: false,
+            selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
+            eventLoader: _eventsForDay,
+            onDaySelected: (sel, foc) {
+              HapticFeedback.selectionClick();
+              setState(() {
+                _selectedDay = sel;
+                _focusedDay = foc;
+                _emptyIdx = (_emptyIdx + 1) % _chillEmptyQuotes.length;
+              });
+            },
+            onPageChanged: (foc) => setState(() => _focusedDay = foc),
+            daysOfWeekHeight: 26,
+            rowHeight: 46,
+            daysOfWeekStyle: DaysOfWeekStyle(
+              dowTextFormatter: (dt, loc) =>
+                  DateFormat.E(loc).format(dt).replaceAll('.', '').toUpperCase(),
+              weekdayStyle: TextStyle(
+                  fontSize: 10.5, fontWeight: FontWeight.w800, letterSpacing: 0.5, color: s.faint),
+              weekendStyle: TextStyle(
+                  fontSize: 10.5, fontWeight: FontWeight.w800, letterSpacing: 0.5, color: s.faint),
+            ),
+            calendarStyle: CalendarStyle(
+              cellMargin: const EdgeInsets.all(4),
+              defaultTextStyle: TextStyle(
+                  fontWeight: FontWeight.w700, fontSize: 13.5, color: s.txt),
+              weekendTextStyle: TextStyle(
+                  fontWeight: FontWeight.w700, fontSize: 13.5, color: s.txt),
+              outsideTextStyle: TextStyle(
+                  fontWeight: FontWeight.w600, fontSize: 13, color: alphaCol(s.muted, 0.4)),
+              todayDecoration: BoxDecoration(
+                color: alphaCol(VibePalette.primary, 0.10),
+                borderRadius: BorderRadius.circular(13),
+                border: Border.all(color: alphaCol(VibePalette.primary, 0.8), width: 1.4),
+              ),
+              todayTextStyle: TextStyle(
+                  fontWeight: FontWeight.w900, fontSize: 13.5, color: s.txt),
+              selectedDecoration: BoxDecoration(
+                gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [VibePalette.primary, VibePalette.primaryGlow]),
+                borderRadius: BorderRadius.circular(13),
+                boxShadow: [
+                  BoxShadow(
+                      color: alphaCol(VibePalette.primary, 0.42),
+                      blurRadius: 12,
+                      offset: const Offset(0, 5)),
+                ],
+              ),
+              selectedTextStyle: const TextStyle(
+                  fontWeight: FontWeight.w900, fontSize: 13.5, color: Colors.white),
+            ),
+            calendarBuilders: CalendarBuilders(
+              markerBuilder: (_, __, evs) => evs.isEmpty
+                  ? const SizedBox.shrink()
+                  : Positioned(
+                      bottom: 3,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: evs
+                            .take(3)
+                            .map((e) => Container(
+                                  width: 5,
+                                  height: 5,
+                                  margin: const EdgeInsets.symmetric(horizontal: 1.2),
+                                  decoration: BoxDecoration(
+                                      color: e.category.color, shape: BoxShape.circle),
+                                ))
+                            .toList(),
+                      ),
+                    ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Divider(color: s.hairline, height: 1),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 16,
+            runSpacing: 8,
+            children: EventCategory.values
+                .map((c) => Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 7,
+                          height: 7,
+                          decoration: BoxDecoration(color: c.color, shape: BoxShape.circle),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(c.label,
+                            style: TextStyle(
+                                fontSize: 11.5, fontWeight: FontWeight.w600, color: s.muted)),
+                      ],
+                    ))
+                .toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _dayAgendaCard(VibeSkin s, List<SchoolEvent> dayEvents) {
+    final rawDay = DateFormat('EEEE d MMMM', 'it_IT').format(_selectedDay);
+    final dayTitle =
+        rawDay.split(' ').map((w) => w.isEmpty ? w : w[0].toUpperCase() + w.substring(1)).join(' ');
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+      decoration: s.panel(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(dayTitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontSize: 16.5,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.3,
+                            color: s.txt)),
+                    const SizedBox(height: 2),
+                    Text(
+                      dayEvents.isEmpty
+                          ? 'Nessun impegno'
+                          : '${dayEvents.length} ${dayEvents.length == 1 ? 'impegno' : 'impegni'} in agenda',
+                      style: TextStyle(fontSize: 11.5, color: s.faint),
+                    ),
+                  ],
+                ),
+              ),
+              GestureDetector(
+                onTap: () => _showEventModal(baseDate: _selectedDay),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: alphaCol(VibePalette.primary, 0.14),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: alphaCol(VibePalette.primary, 0.35)),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(CupertinoIcons.add, size: 13, color: Color(0xFF818CF8)),
+                      SizedBox(width: 4),
+                      Text('Aggiungi',
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF818CF8))),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          if (dayEvents.isEmpty)
+            CustomPaint(
+              painter: _DashedRRectPainter(color: s.border, radius: 18),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 26, horizontal: 18),
+                decoration: BoxDecoration(
+                  color: s.dark ? alphaCol(VibePalette.darkCardAlt, 0.5) : VibePalette.lightCardAlt,
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Column(
+                  children: [
+                    Icon(CupertinoIcons.calendar_badge_minus, size: 26, color: s.faint),
+                    const SizedBox(height: 8),
+                    Text(_chillEmptyQuotes[_emptyIdx],
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                            height: 1.35,
+                            color: s.muted)),
+                  ],
+                ),
+              ),
+            )
+          else
+            ...dayEvents.map((e) => _eventCardTile(e, s)),
+        ],
+      ),
+    );
+  }
 
   String _countdownText(DateTime dt) {
     final diff = dt.difference(DateTime.now());
@@ -2556,122 +3322,341 @@ class _HomeShellState extends State<HomeShell> {
     return 'Tra ${max(1, diff.inMinutes)}m';
   }
 
-  Widget _eventCardTile(SchoolEvent ev, bool d, Color border, Color txt, Color muted) {
+  Widget _eventCardTile(SchoolEvent ev, VibeSkin s, {bool showDate = false}) {
     final c = ev.category.color;
-    return InkWell(
-      borderRadius: BorderRadius.circular(18),
-      onTap: () => _showEventModal(existing: ev),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.all(13),
-        decoration: BoxDecoration(
-          color: d ? VibePalette.darkCardAlt : VibePalette.lightCardAlt,
+    final accent = ev.completed ? s.faint : c;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 9),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: ev.completed ? border : alphaCol(c, 0.45)),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            GestureDetector(
-              onTap: () async {
-                final i = _events.indexWhere((x) => x.id == ev.id);
-                if (i != -1) {
-                  setState(() => _events[i] = _events[i].copyWith(completed: !ev.completed));
-                  await _saveEvents();
-                }
-              },
-              child: Container(
-                width: 24,
-                height: 24,
-                margin: const EdgeInsets.only(top: 2),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: ev.completed ? VibePalette.okGreen : alphaCol(c, 0.15),
-                  border: Border.all(color: ev.completed ? VibePalette.okGreen : c, width: 2),
-                ),
-                child:
-                    ev.completed ? const Icon(Icons.check, size: 15, color: Colors.white) : null,
-              ),
+          onTap: () => _showEventModal(existing: ev),
+          child: Ink(
+            decoration: BoxDecoration(
+              color: s.cardAlt,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                  color: ev.completed ? s.border : alphaCol(c, s.dark ? 0.38 : 0.28)),
             ),
-            const SizedBox(width: 11),
-            Expanded(
-              child: Column(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
+              child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 5,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                            color: alphaCol(c, 0.18), borderRadius: BorderRadius.circular(7)),
-                        child: Text(ev.category.label,
-                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: c)),
+                  GestureDetector(
+                    onTap: () async {
+                      HapticFeedback.selectionClick();
+                      final i = _events.indexWhere((x) => x.id == ev.id);
+                      if (i != -1) {
+                        setState(() =>
+                            _events[i] = _events[i].copyWith(completed: !ev.completed));
+                        await _saveEvents();
+                      }
+                    },
+                    child: AnimatedContainer(
+                      duration: VibeMetrics.fast,
+                      width: 24,
+                      height: 24,
+                      margin: const EdgeInsets.only(top: 1),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: ev.completed ? VibePalette.okGreen : alphaCol(c, 0.12),
+                        border: Border.all(
+                            color: ev.completed ? VibePalette.okGreen : alphaCol(c, 0.75),
+                            width: 1.8),
                       ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                            color: alphaCol(VibePalette.primary, 0.16),
-                            borderRadius: BorderRadius.circular(7)),
-                        child: Text(ev.subject,
-                            style: const TextStyle(
-                                fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF818CF8))),
-                      ),
-                      if (!ev.completed)
-                        Text(_countdownText(ev.dateTime),
-                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: txt)),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    ev.title,
-                    style: TextStyle(
-                      fontSize: 14.5,
-                      fontWeight: FontWeight.w700,
-                      color: ev.completed ? muted : txt,
-                      decoration: ev.completed ? TextDecoration.lineThrough : null,
+                      child: ev.completed
+                          ? const Icon(Icons.check_rounded, size: 15, color: Colors.white)
+                          : null,
                     ),
                   ),
-                  if (ev.notes.isNotEmpty)
-                    Text(ev.notes, style: TextStyle(fontSize: 12, color: muted)),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${DateFormat('EEE d MMM · HH:mm', 'it_IT').format(ev.dateTime)}'
-                    ' · ${ev.reminderSummary()}'
-                    '${ev.fromArgo ? (ev.editedByUser ? ' · Argo (modificato)' : ' · Argo') : ''}',
-                    style: TextStyle(fontSize: 11, color: muted),
+                  const SizedBox(width: 11),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              width: 6,
+                              height: 6,
+                              decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
+                            ),
+                            const SizedBox(width: 5),
+                            Flexible(
+                              child: Text(
+                                ev.category.label.toUpperCase(),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 0.7,
+                                  color: accent,
+                                ),
+                              ),
+                            ),
+                            Container(
+                              margin: const EdgeInsets.symmetric(horizontal: 6),
+                              width: 3,
+                              height: 3,
+                              decoration: BoxDecoration(
+                                  color: alphaCol(s.muted, 0.5), shape: BoxShape.circle),
+                            ),
+                            Flexible(
+                              child: Text(
+                                ev.subject,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: s.muted,
+                                ),
+                              ),
+                            ),
+                            const Spacer(),
+                            if (!ev.completed)
+                              Text(
+                                _countdownText(ev.dateTime),
+                                style: TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w800,
+                                    color: s.faint),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          ev.title,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w700,
+                            height: 1.28,
+                            letterSpacing: -0.2,
+                            color: ev.completed ? s.faint : s.txt,
+                            decoration: ev.completed ? TextDecoration.lineThrough : null,
+                            decorationColor: s.faint,
+                          ),
+                        ),
+                        if (ev.notes.isNotEmpty) ...[
+                          const SizedBox(height: 3),
+                          Text(ev.notes,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 11.5, color: s.faint)),
+                        ],
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            Icon(CupertinoIcons.clock, size: 11, color: s.faint),
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                showDate
+                                    ? '${_dayLabel(ev.dateTime)} · ${DateFormat('HH:mm').format(ev.dateTime)}'
+                                    : DateFormat('d MMM · HH:mm', 'it_IT').format(ev.dateTime),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: s.faint),
+                              ),
+                            ),
+                            if (ev.fromArgo) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: alphaCol(VibePalette.okGreen, 0.12),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  ev.editedByUser ? 'ARGO ✎' : 'ARGO',
+                                  style: const TextStyle(
+                                      fontSize: 7.5,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 0.3,
+                                      color: VibePalette.okGreen),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  PopupMenuButton<String>(
+                    tooltip: 'Azioni',
+                    padding: EdgeInsets.zero,
+                    splashRadius: 18,
+                    icon: Icon(CupertinoIcons.ellipsis, size: 17, color: s.faint),
+                    color: s.card,
+                    elevation: 8,
+                    position: PopupMenuPosition.under,
+                    shape:
+                        RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    onSelected: (v) {
+                      if (v == 'edit') {
+                        _showEventModal(existing: ev);
+                      } else if (v == 'delete') {
+                        _deleteEvent(ev);
+                      }
+                    },
+                    itemBuilder: (_) => [
+                      PopupMenuItem(
+                        value: 'edit',
+                        child: Row(
+                          children: [
+                            const Icon(CupertinoIcons.pencil,
+                                size: 15, color: Color(0xFF818CF8)),
+                            const SizedBox(width: 9),
+                            Text('Modifica', style: TextStyle(fontSize: 13, color: s.txt)),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: Row(
+                          children: [
+                            const Icon(CupertinoIcons.trash,
+                                size: 15, color: VibePalette.verificaRed),
+                            const SizedBox(width: 9),
+                            Text('Elimina',
+                                style: TextStyle(
+                                    fontSize: 13, color: VibePalette.verificaRed)),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
             ),
-            IconButton(
-              visualDensity: VisualDensity.compact,
-              tooltip: 'Modifica',
-              icon: const Icon(CupertinoIcons.pencil, size: 18, color: Color(0xFF818CF8)),
-              onPressed: () => _showEventModal(existing: ev),
-            ),
-            IconButton(
-              visualDensity: VisualDensity.compact,
-              tooltip: 'Elimina',
-              icon: Icon(CupertinoIcons.trash, size: 17, color: muted),
-              onPressed: () => _deleteEvent(ev),
-            ),
-          ],
+          ),
         ),
       ),
     );
   }
 
+  String _dayLabel(DateTime d) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final target = DateTime(d.year, d.month, d.day);
+    final diff = target.difference(today).inDays;
+    if (diff == 0) return 'Oggi';
+    if (diff == 1) return 'Domani';
+    if (diff == -1) return 'Ieri';
+    final raw = DateFormat('EEE d MMM', 'it_IT').format(d);
+    return raw[0].toUpperCase() + raw.substring(1);
+  }
+
+  Widget _buildListWithCountdown(VibeSkin s) {
+    final list = _upcomingFiltered;
+    final groups = <DateTime, List<SchoolEvent>>{};
+    for (final e in list) {
+      final key = DateTime(e.dateTime.year, e.dateTime.month, e.dateTime.day);
+      groups.putIfAbsent(key, () => []).add(e);
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (list.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(26),
+            decoration: s.panel(24),
+            child: Column(
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: alphaCol(VibePalette.primary, 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(CupertinoIcons.checkmark_seal,
+                      color: VibePalette.primary, size: 24),
+                ),
+                const SizedBox(height: 12),
+                Text('Nessun impegno in programma',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        fontSize: 15, fontWeight: FontWeight.w800, color: s.txt)),
+                const SizedBox(height: 4),
+                Text('Aggiungi una verifica o un\'interrogazione per iniziare.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 12.5, color: s.muted)),
+              ],
+            ),
+          )
+        else
+          for (final entry in groups.entries) ...[
+            Padding(
+              padding: const EdgeInsets.only(left: 4, top: 4, bottom: 8),
+              child: Row(
+                children: [
+                  Text(
+                    _dayLabel(entry.key).toUpperCase(),
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.1,
+                      color: s.faint,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      DateFormat('d MMMM', 'it_IT').format(entry.key),
+                      style: TextStyle(fontSize: 11, color: s.faint),
+                    ),
+                  ),
+                  if (entry.key.difference(DateTime.now()).inDays.abs() <= 7)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: alphaCol(VibePalette.primary, 0.12),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        '${entry.value.where((e) => !e.completed).length} da fare',
+                        style: const TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF818CF8)),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            ...entry.value.map((e) => _eventCardTile(e, s, showDate: false)),
+            const SizedBox(height: 4),
+          ],
+      ],
+    );
+  }
+
   // --------------------------------------------------------------------------
-  // TAB 2: ORARIO SCOLASTICO (SCANSIONE ORARIA A SINISTRA, MAX 2 SLOT, NO AULA)
+  // TAB 2: ORARIO SCOLASTICO (SEGUE IN .ui_part2)
   // --------------------------------------------------------------------------
 
-  Widget _buildTimetableTab(bool d, Color card, Color border) {
-    final txt = d ? Colors.white : const Color(0xFF0F172A);
-    final muted = d ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
+  // --------------------------------------------------------------------------
+  // TAB 2: ORARIO SCOLASTICO
+  // --------------------------------------------------------------------------
+
+  Widget _buildTimetableTab(VibeSkin s) {
     final sched = _timetable[_ttDay] ?? DaySchedule.initial();
     final todayWd = DateTime.now().weekday;
+    final totalHours = _timetable.values
+        .fold<int>(0, (acc, d) => acc + d.slots.where((x) => x.subject.trim().isNotEmpty).length);
 
     final dayRows = <Widget>[];
     bool gapAdded = false;
@@ -2681,7 +3666,7 @@ class _HomeShellState extends State<HomeShell> {
       final slot = sched.slots[i];
       final afternoon = slot.isAfternoon(i);
       if (afternoon && hasMorningBefore && !gapAdded) {
-        dayRows.add(const SizedBox(height: 28));
+        dayRows.add(_lunchBreak(s));
         gapAdded = true;
       }
       if (!afternoon) hasMorningBefore = true;
@@ -2689,148 +3674,140 @@ class _HomeShellState extends State<HomeShell> {
         slotIndex: i,
         slot: slot,
         isAfternoon: afternoon,
-        d: d,
-        border: border,
-        txt: txt,
-        muted: muted,
+        s: s,
         onTap: () => _editLessonSlotModal(_ttDay, i),
       ));
     }
 
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 40),
+      padding: const EdgeInsets.fromLTRB(VibeMetrics.pagePad, 4, VibeMetrics.pagePad, 110),
       children: [
         Row(
           children: [
             Expanded(
-              child: Text('Orario Scolastico',
-                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: txt)),
-            ),
-            Container(
-              padding: const EdgeInsets.all(3),
-              decoration: cardDeco(card, border, 22),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _segBtn(!_ttWeekOverview, CupertinoIcons.calendar_today, 'Giorno', muted,
-                      () => setState(() => _ttWeekOverview = false)),
-                  _segBtn(_ttWeekOverview, CupertinoIcons.square_grid_2x2, 'Settimana', muted,
-                      () => setState(() => _ttWeekOverview = true)),
+                  Text('Orario Scolastico',
+                      style: TextStyle(
+                          fontSize: 19.5,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.6,
+                          color: s.txt)),
+                  const SizedBox(height: 2),
+                  Text('$totalHours ore di lezione in settimana',
+                      style: TextStyle(fontSize: 11.5, color: s.faint)),
                 ],
               ),
+            ),
+            _iconToggle(
+              s,
+              left: CupertinoIcons.calendar_today,
+              right: CupertinoIcons.square_grid_2x2,
+              leftLabel: 'Giorno',
+              rightLabel: 'Settimana',
+              rightActive: _ttWeekOverview,
+              onChanged: (v) => setState(() => _ttWeekOverview = v),
             ),
           ],
         ),
         const SizedBox(height: 14),
         if (_ttWeekOverview)
-          _buildWeekOverview(d, card, border, txt, muted)
+          _buildWeekOverview(s)
         else ...[
-          Row(
-            children: [
-              for (int wd = 1; wd <= 5; wd++)
-                Expanded(
-                  child: Padding(
-                    padding: EdgeInsets.only(right: wd < 5 ? 8 : 0),
-                    child: GestureDetector(
-                      onTap: () => setState(() => _ttDay = wd),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 180),
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        decoration: BoxDecoration(
-                          gradient: _ttDay == wd
-                              ? const LinearGradient(
-                                  colors: [VibePalette.primary, VibePalette.primaryGlow])
-                              : null,
-                          color: _ttDay == wd ? null : card,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                              color: _ttDay == wd
-                                  ? VibePalette.primary
-                                  : (todayWd == wd ? VibePalette.capBlue : border)),
-                        ),
-                        child: Column(
-                          children: [
-                            Text(
-                              _dayShort[wd]!,
-                              style: TextStyle(
-                                fontSize: 13.5,
-                                fontWeight: FontWeight.w800,
-                                color: _ttDay == wd ? Colors.white : txt,
-                              ),
-                            ),
-                            if ((_timetable[wd]?.afternoonCount ?? 0) > 0)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 2),
-                                child: Text(
-                                  '+${_timetable[wd]!.afternoonCount} pom',
-                                  style: TextStyle(
-                                    fontSize: 9.5,
-                                    fontWeight: FontWeight.w700,
-                                    color: _ttDay == wd
-                                        ? Colors.white70
-                                        : VibePalette.interrogazioneAmber,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 16),
+          _daySelector(s, todayWd),
+          const SizedBox(height: 14),
           Container(
-            padding: const EdgeInsets.all(16),
-            decoration: cardDeco(card, border),
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+            decoration: s.panel(24),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
                     Expanded(
-                      child: Text(
-                        '${_dayNames[_ttDay]} (${sched.slots.length} ore)',
-                        style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.w800, color: txt),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _dayNames[_ttDay]!,
+                            style: TextStyle(
+                                fontSize: 16.5,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.3,
+                                color: s.txt),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${sched.slots.length} ore'
+                            '${sched.afternoonCount > 0 ? ' · ${sched.afternoonCount} al pomeriggio' : ''}',
+                            style: TextStyle(fontSize: 11.5, color: s.faint),
+                          ),
+                        ],
                       ),
                     ),
-                    IconButton(
-                      visualDensity: VisualDensity.compact,
-                      tooltip: 'Togli ultima ora',
-                      onPressed: sched.slots.isEmpty
-                          ? null
-                          : () async {
-                              final next = [...sched.slots]..removeLast();
-                              setState(() => _timetable[_ttDay] = DaySchedule(slots: next));
-                              await _saveTimetable();
-                            },
-                      icon: Icon(CupertinoIcons.minus_circle, color: muted, size: 22),
-                    ),
-                    IconButton(
-                      visualDensity: VisualDensity.compact,
-                      tooltip: 'Aggiungi ora',
-                      onPressed: sched.slots.length >= 10
-                          ? null
-                          : () async {
-                              final newIdx = sched.slots.length;
-                              final next = [
-                                ...sched.slots,
-                                LessonSlot(time: DaySchedule.defaultSlotTime(newIdx)),
-                              ];
-                              setState(() => _timetable[_ttDay] = DaySchedule(slots: next));
-                              await _saveTimetable();
-                            },
-                      icon: const Icon(CupertinoIcons.plus_circle_fill,
-                          color: VibePalette.primary, size: 23),
+                    Container(
+                      padding: const EdgeInsets.all(3),
+                      decoration: BoxDecoration(
+                        color: s.cardAlt,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: s.border),
+                      ),
+                      child: Row(
+                        children: [
+                          _softIconButton(
+                            s,
+                            CupertinoIcons.minus,
+                            sched.slots.isEmpty
+                                ? () {}
+                                : () async {
+                                    final next = [...sched.slots]..removeLast();
+                                    setState(() =>
+                                        _timetable[_ttDay] = DaySchedule(slots: next));
+                                    await _saveTimetable();
+                                  },
+                          ),
+                          _softIconButton(
+                            s,
+                            CupertinoIcons.plus,
+                            sched.slots.length >= 10
+                                ? () {}
+                                : () async {
+                                    final newIdx = sched.slots.length;
+                                    final next = [
+                                      ...sched.slots,
+                                      LessonSlot(time: DaySchedule.defaultSlotTime(newIdx)),
+                                    ];
+                                    setState(() =>
+                                        _timetable[_ttDay] = DaySchedule(slots: next));
+                                    await _saveTimetable();
+                                  },
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 12),
                 if (dayRows.isEmpty)
-                  Text('Nessuna ora impostata. Premi + in alto a destra per aggiungere ore.',
-                      style: TextStyle(fontSize: 13, color: muted))
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    child: Center(
+                      child: Column(
+                        children: [
+                          Icon(CupertinoIcons.clock, size: 26, color: s.faint),
+                          const SizedBox(height: 8),
+                          Text('Nessuna ora impostata',
+                              style: TextStyle(
+                                  fontSize: 13.5, fontWeight: FontWeight.w700, color: s.muted)),
+                          const SizedBox(height: 2),
+                          Text('Usa + per aggiungere la prima ora.',
+                              style: TextStyle(fontSize: 11.5, color: s.faint)),
+                        ],
+                      ),
+                    ),
+                  )
                 else
                   ...dayRows,
               ],
@@ -2841,14 +3818,177 @@ class _HomeShellState extends State<HomeShell> {
     );
   }
 
+  Widget _iconToggle(
+    VibeSkin s, {
+    required IconData left,
+    required IconData right,
+    required String leftLabel,
+    required String rightLabel,
+    required bool rightActive,
+    required ValueChanged<bool> onChanged,
+  }) {
+    Widget btn(IconData icon, String label, bool active, bool value) => GestureDetector(
+          onTap: () {
+            HapticFeedback.selectionClick();
+            onChanged(value);
+          },
+          child: AnimatedContainer(
+            duration: VibeMetrics.fast,
+            width: 34,
+            height: 34,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              gradient: active
+                  ? const LinearGradient(
+                      colors: [VibePalette.primary, VibePalette.primaryGlow])
+                  : null,
+              borderRadius: BorderRadius.circular(10),
+              boxShadow: active
+                  ? [
+                      BoxShadow(
+                          color: alphaCol(VibePalette.primary, 0.32),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4)),
+                    ]
+                  : null,
+            ),
+            child: Tooltip(
+              message: label,
+              child: Icon(icon, size: 15, color: active ? Colors.white : s.muted),
+            ),
+          ),
+        );
+
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: s.card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: s.border),
+        boxShadow: s.cardShadow,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          btn(left, leftLabel, !rightActive, false),
+          const SizedBox(width: 3),
+          btn(right, rightLabel, rightActive, true),
+        ],
+      ),
+    );
+  }
+
+  Widget _daySelector(VibeSkin s, int todayWd) {
+    final now = DateTime.now();
+    final monday = DateTime(now.year, now.month, now.day)
+        .subtract(Duration(days: now.weekday - 1));
+
+    return Row(
+      children: [
+        for (int wd = 1; wd <= 5; wd++)
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(right: wd < 5 ? 7 : 0),
+              child: GestureDetector(
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  setState(() => _ttDay = wd);
+                },
+                child: AnimatedContainer(
+                  duration: VibeMetrics.fast,
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  decoration: BoxDecoration(
+                    gradient: _ttDay == wd
+                        ? const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [VibePalette.primary, VibePalette.primaryGlow])
+                        : null,
+                    color: _ttDay == wd ? null : s.card,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: _ttDay == wd
+                          ? Colors.transparent
+                          : (todayWd == wd ? alphaCol(VibePalette.capBlue, 0.6) : s.border),
+                    ),
+                    boxShadow: _ttDay == wd
+                        ? [
+                            BoxShadow(
+                                color: alphaCol(VibePalette.primary, 0.35),
+                                blurRadius: 16,
+                                offset: const Offset(0, 7)),
+                          ]
+                        : s.cardShadow,
+                  ),
+                  child: Column(
+                    children: [
+                      Text(
+                        _dayShort[wd]!,
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.2,
+                          color: _ttDay == wd ? Colors.white : s.muted,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${monday.add(Duration(days: wd - 1)).day}',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          height: 1.1,
+                          color: _ttDay == wd ? Colors.white : s.txt,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Container(
+                        width: 4,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: todayWd == wd
+                              ? (_ttDay == wd ? Colors.white : VibePalette.capBlue)
+                              : Colors.transparent,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _lunchBreak(VibeSkin s) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(
+          children: [
+            Expanded(child: Divider(color: s.hairline, height: 1)),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Row(
+                children: [
+                  Icon(Icons.restaurant_rounded, size: 11, color: s.faint),
+                  const SizedBox(width: 5),
+                  Text('Pausa pranzo',
+                      style: TextStyle(
+                          fontSize: 10.5, fontWeight: FontWeight.w700, color: s.faint)),
+                ],
+              ),
+            ),
+            Expanded(child: Divider(color: s.hairline, height: 1)),
+          ],
+        ),
+      );
+
   Widget _lessonRow({
     required int slotIndex,
     required LessonSlot slot,
     required bool isAfternoon,
-    required bool d,
-    required Color border,
-    required Color txt,
-    required Color muted,
+    required VibeSkin s,
     required VoidCallback onTap,
   }) {
     final hasSubj = slot.subject.trim().isNotEmpty;
@@ -2857,74 +3997,102 @@ class _HomeShellState extends State<HomeShell> {
         : (isAfternoon ? VibePalette.interrogazioneAmber : VibePalette.capBlue);
     final displayTime =
         slot.time.trim().isNotEmpty ? slot.time.trim() : DaySchedule.defaultSlotTime(slotIndex);
+    final parts = displayTime.split('-');
+    final start = parts.isNotEmpty ? parts.first.trim() : displayTime;
+    final end = parts.length > 1 ? parts.last.trim() : '';
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
-          decoration: BoxDecoration(
-            color: d ? VibePalette.darkCardAlt : VibePalette.lightCardAlt,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: hasSubj ? alphaCol(col, 0.45) : border),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 96,
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 6),
-                decoration: BoxDecoration(
-                  color: alphaCol(col, hasSubj ? 0.16 : 0.10),
-                  borderRadius: BorderRadius.circular(11),
-                ),
-                child: Column(
-                  children: [
-                    Text(
-                      displayTime,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        color: hasSubj ? col : txt,
-                      ),
+      padding: const EdgeInsets.only(bottom: 7),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Ink(
+            decoration: BoxDecoration(
+              color: hasSubj ? alphaCol(col, s.dark ? 0.10 : 0.07) : s.cardAlt,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: hasSubj ? alphaCol(col, 0.32) : s.border),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
+              child: Row(
+                children: [
+                  Container(
+                    width: 3,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: hasSubj ? col : alphaCol(s.muted, 0.35),
+                      borderRadius: BorderRadius.circular(3),
                     ),
-                    const SizedBox(height: 1),
-                    Text(
-                      '${slotIndex + 1}ª ora',
-                      style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600, color: muted),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 11),
-              Expanded(
-                child: Text(
-                  hasSubj ? slot.subject : 'Tocca per inserire materia',
-                  style: TextStyle(
-                    fontSize: 14.5,
-                    fontWeight: hasSubj ? FontWeight.w800 : FontWeight.w500,
-                    fontStyle: hasSubj ? FontStyle.normal : FontStyle.italic,
-                    color: hasSubj ? txt : muted,
                   ),
-                ),
+                  const SizedBox(width: 10),
+                  SizedBox(
+                    width: 46,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          start,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            height: 1.15,
+                            color: hasSubj ? s.txt : s.muted,
+                          ),
+                        ),
+                        Text(
+                          end,
+                          style: TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w600,
+                              color: s.faint),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          hasSubj ? slot.subject : 'Ora libera',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: hasSubj ? FontWeight.w800 : FontWeight.w500,
+                            fontStyle: hasSubj ? FontStyle.normal : FontStyle.italic,
+                            color: hasSubj ? s.txt : s.faint,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${slotIndex + 1}ª ora${isAfternoon ? ' · pomeriggio' : ''}',
+                          style: TextStyle(
+                              fontSize: 10, fontWeight: FontWeight.w600, color: s.faint),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(CupertinoIcons.pencil, size: 15, color: alphaCol(col, 0.75)),
+                ],
               ),
-              const Icon(CupertinoIcons.pencil, size: 17, color: Color(0xFF818CF8)),
-            ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildWeekOverview(bool d, Color card, Color border, Color txt, Color muted) {
+  Widget _buildWeekOverview(VibeSkin s) {
     return Column(
       children: [
         for (int wd = 1; wd <= 5; wd++)
           Builder(builder: (_) {
-            final s = _timetable[wd] ?? DaySchedule.initial();
-            final filled = s.slots.where((x) => x.subject.trim().isNotEmpty).toList();
+            final day = _timetable[wd] ?? DaySchedule.initial();
+            final filled = day.slots.where((x) => x.subject.trim().isNotEmpty).toList();
             return GestureDetector(
               onTap: () => setState(() {
                 _ttDay = wd;
@@ -2932,52 +4100,102 @@ class _HomeShellState extends State<HomeShell> {
               }),
               child: Container(
                 width: double.infinity,
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.all(16),
-                decoration: cardDeco(card, border, 20),
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.fromLTRB(15, 14, 15, 14),
+                decoration: s.panel(20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       children: [
-                        Expanded(
-                          child: Text(_dayNames[wd]!,
-                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: txt)),
+                        Container(
+                          width: 30,
+                          height: 30,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: alphaCol(VibePalette.primary, 0.12),
+                            borderRadius: BorderRadius.circular(9),
+                          ),
+                          child: Text(
+                            _dayShort[wd]!,
+                            style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w900,
+                                color: VibePalette.primary),
+                          ),
                         ),
-                        const Text('Modifica ›',
-                            style: TextStyle(
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w700,
-                                color: VibePalette.capBlue)),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(_dayNames[wd]!,
+                                  style: TextStyle(
+                                      fontSize: 14.5,
+                                      fontWeight: FontWeight.w800,
+                                      color: s.txt)),
+                              Text(
+                                filled.isEmpty
+                                    ? 'Nessuna materia'
+                                    : '${filled.length} ore'
+                                        '${day.afternoonCount > 0 ? ' · ${day.afternoonCount} pom' : ''}',
+                                style: TextStyle(fontSize: 10.5, color: s.faint),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Icon(CupertinoIcons.chevron_right, size: 15, color: s.faint),
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    if (filled.isEmpty)
-                      Text('Nessuna materia inserita', style: TextStyle(fontSize: 12.5, color: muted))
-                    else
+                    if (day.slots.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          for (int i = 0; i < day.slots.length; i++)
+                            Expanded(
+                              child: Container(
+                                height: 5,
+                                margin: EdgeInsets.only(
+                                    right: i == day.slots.length - 1 ? 0 : 3),
+                                decoration: BoxDecoration(
+                                  color: day.slots[i].subject.trim().isEmpty
+                                      ? alphaCol(s.muted, 0.22)
+                                      : subjectAccent(day.slots[i].subject),
+                                  borderRadius: BorderRadius.circular(3),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                    if (filled.isNotEmpty) ...[
+                      const SizedBox(height: 10),
                       Wrap(
                         spacing: 6,
                         runSpacing: 6,
                         children: [
-                          for (int i = 0; i < s.slots.length; i++)
-                            if (s.slots[i].subject.trim().isNotEmpty)
+                          for (int i = 0; i < day.slots.length; i++)
+                            if (day.slots[i].subject.trim().isNotEmpty)
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                 decoration: BoxDecoration(
-                                  color: alphaCol(subjectAccent(s.slots[i].subject), 0.16),
-                                  borderRadius: BorderRadius.circular(9),
+                                  color: alphaCol(
+                                      subjectAccent(day.slots[i].subject), 0.14),
+                                  borderRadius: BorderRadius.circular(7),
                                 ),
                                 child: Text(
-                                  '${i + 1}ª ${s.slots[i].subject}',
+                                  '${i + 1}ª ${day.slots[i].subject}',
                                   style: TextStyle(
-                                    fontSize: 12,
+                                    fontSize: 10.5,
                                     fontWeight: FontWeight.w700,
-                                    color: subjectAccent(s.slots[i].subject),
+                                    color: subjectAccent(day.slots[i].subject),
                                   ),
                                 ),
                               ),
                         ],
                       ),
+                    ],
                   ],
                 ),
               ),
@@ -2987,14 +4205,12 @@ class _HomeShellState extends State<HomeShell> {
     );
   }
 
-  // Tendina modifica materia pulita:
-  // - nessun orario nel titolo in alto
-  // - nessuna materia consigliata
-  // - max 2 ore (niente 3 slot e niente reminder testuale)
-  // - nessuna casella Aula
+  // Tendina modifica materia: nessun orario nel titolo, nessuna materia
+  // consigliata, max 2 ore, nessuna casella Aula. Logica invariata.
   void _editLessonSlotModal(int weekday, int idx) {
     final sched = _timetable[weekday] ?? DaySchedule.initial();
     if (idx < 0 || idx >= sched.slots.length) return;
+    final s = VibeSkin(widget.isDark);
 
     (int, int) boundsOf(int i) {
       if (i < sched.slots.length) {
@@ -3045,27 +4261,37 @@ class _HomeShellState extends State<HomeShell> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: widget.isDark ? VibePalette.darkCard : VibePalette.lightCard,
-      shape:
-          const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
+      backgroundColor: s.card,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setM) {
           final sIdx = findStartSlot(startMin);
           final span = calcSpan(startMin, endMin);
           return Padding(
-            padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 22),
+            padding: EdgeInsets.fromLTRB(20, 10, 20, MediaQuery.of(ctx).viewInsets.bottom + 22),
             child: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  _sheetHandle(s),
+                  const SizedBox(height: 14),
                   Text(
                     '${_dayNames[weekday]} · ${idx + 1}ª ora',
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                    style: TextStyle(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.5,
+                        color: s.txt),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 3),
+                  Text('Inserisci la materia e l\'orario della lezione',
+                      style: TextStyle(fontSize: 12.5, color: s.muted)),
+                  const SizedBox(height: 16),
                   TextField(
                     controller: subjCtrl,
+                    textCapitalization: TextCapitalization.sentences,
                     decoration: fieldDeco('Materia', icon: CupertinoIcons.book),
                   ),
                   const SizedBox(height: 12),
@@ -3073,7 +4299,7 @@ class _HomeShellState extends State<HomeShell> {
                     children: [
                       Expanded(
                         child: OutlinedButton.icon(
-                          icon: const Icon(CupertinoIcons.clock, size: 16),
+                          icon: const Icon(CupertinoIcons.clock, size: 15),
                           label: Text('Dalle ${fmtMin(startMin)}'),
                           onPressed: () async {
                             final picked = await showTimePicker(
@@ -3094,7 +4320,7 @@ class _HomeShellState extends State<HomeShell> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: OutlinedButton.icon(
-                          icon: const Icon(CupertinoIcons.clock_fill, size: 16),
+                          icon: const Icon(CupertinoIcons.clock_fill, size: 15),
                           label: Text('Alle ${fmtMin(endMin)}'),
                           onPressed: () async {
                             final picked = await showTimePicker(
@@ -3110,22 +4336,26 @@ class _HomeShellState extends State<HomeShell> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
+                  const SizedBox(height: 14),
+                  Row(
                     children: [1, 2].map((h) {
                       final active = span == h;
-                      return ChoiceChip(
-                        label: Text(h == 1 ? '1 ora' : '2 ore'),
-                        selected: active,
-                        onSelected: (_) => setM(() {
-                          startMin = boundsOf(sIdx).$1;
-                          endMin = boundsOf(sIdx + h - 1).$2;
-                        }),
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: _pill(
+                          s: s,
+                          label: h == 1 ? '1 ora' : '2 ore',
+                          selected: active,
+                          accent: VibePalette.primary,
+                          onTap: () => setM(() {
+                            startMin = boundsOf(sIdx).$1;
+                            endMin = boundsOf(sIdx + h - 1).$2;
+                          }),
+                        ),
                       );
                     }).toList(),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 18),
                   Row(
                     children: [
                       OutlinedButton.icon(
@@ -3136,15 +4366,12 @@ class _HomeShellState extends State<HomeShell> {
                           await _saveTimetable();
                           if (ctx.mounted) Navigator.pop(ctx);
                         },
-                        icon: const Icon(
-                          CupertinoIcons.clear_circled,
-                          size: 16,
-                          color: VibePalette.verificaRed,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: VibePalette.verificaRed,
+                          side: BorderSide(color: alphaCol(VibePalette.verificaRed, 0.4)),
                         ),
-                        label: const Text(
-                          'Svuota',
-                          style: TextStyle(color: VibePalette.verificaRed),
-                        ),
+                        icon: const Icon(CupertinoIcons.clear_circled, size: 15),
+                        label: const Text('Svuota'),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
@@ -3166,20 +4393,24 @@ class _HomeShellState extends State<HomeShell> {
                                     : official,
                               );
                               while (work.length <= target) {
-                                work.add(LessonSlot(time: DaySchedule.defaultSlotTime(work.length)));
+                                work.add(
+                                    LessonSlot(time: DaySchedule.defaultSlotTime(work.length)));
                               }
                               work[target] = slotVal;
                             }
 
-                            if (sIdx == idx && span < initialSpan && (idx + 1) < work.length) {
-                              work[idx + 1] = LessonSlot(time: DaySchedule.defaultSlotTime(idx + 1));
+                            if (sIdx == idx &&
+                                span < initialSpan &&
+                                (idx + 1) < work.length) {
+                              work[idx + 1] =
+                                  LessonSlot(time: DaySchedule.defaultSlotTime(idx + 1));
                             }
 
                             setState(() => _timetable[weekday] = DaySchedule(slots: work));
                             await _saveTimetable();
                             if (ctx.mounted) Navigator.pop(ctx);
                           },
-                          child: const Text('Salva'),
+                          child: const Text('Salva lezione'),
                         ),
                       ),
                     ],
@@ -3194,7 +4425,7 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   // --------------------------------------------------------------------------
-  // TAB 3: VOTI & MEDIE (PONDERATA / ARITMETICA)
+  // TAB 3: VOTI & MEDIE
   // --------------------------------------------------------------------------
 
   double _avg(List<SchoolGrade> list) {
@@ -3211,9 +4442,7 @@ class _HomeShellState extends State<HomeShell> {
       ? VibePalette.okGreen
       : (v >= 5.5 ? VibePalette.interrogazioneAmber : VibePalette.verificaRed);
 
-  Widget _buildGradesTab(bool d, Color card, Color border) {
-    final txt = d ? Colors.white : const Color(0xFF0F172A);
-    final muted = d ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
+  Widget _buildGradesTab(VibeSkin s) {
     final grouped = <String, List<SchoolGrade>>{};
     for (final g in _grades) {
       grouped.putIfAbsent(g.subject, () => []).add(g);
@@ -3223,150 +4452,426 @@ class _HomeShellState extends State<HomeShell> {
 
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 96),
+      padding: const EdgeInsets.fromLTRB(VibeMetrics.pagePad, 4, VibeMetrics.pagePad, 120),
       children: [
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: cardDeco(card, border),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 82,
-                height: 82,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    SizedBox(
-                      width: 78,
-                      height: 78,
-                      child: CircularProgressIndicator(
-                        value: (_grades.isEmpty ? 0.0 : totalAvg / 10.0).clamp(0.0, 1.0),
-                        strokeWidth: 8,
-                        backgroundColor: alphaCol(muted, 0.18),
-                        valueColor: AlwaysStoppedAnimation(
-                            _grades.isEmpty ? VibePalette.primary : _gradeCol(totalAvg)),
+        _gradeHero(s, totalAvg, subjects.length),
+        const SizedBox(height: 12),
+        if (_grades.isNotEmpty) ...[
+          _distributionCard(s),
+          const SizedBox(height: 12),
+        ],
+        if (subjects.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(28),
+            decoration: s.panel(24),
+            child: Column(
+              children: [
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: alphaCol(VibePalette.primary, 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(CupertinoIcons.chart_bar_alt_fill,
+                      size: 24, color: VibePalette.primary),
+                ),
+                const SizedBox(height: 14),
+                Text('Nessun voto presente',
+                    style: TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w800, color: s.txt)),
+                const SizedBox(height: 6),
+                Text(
+                  'Sincronizza Argo nelle impostazioni oppure premi + per registrare un voto.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12.5, height: 1.4, color: s.muted),
+                ),
+              ],
+            ),
+          )
+        else ...[
+          _sectionLabel(s, 'Materie', CupertinoIcons.book),
+          ...subjects.map((subject) => _subjectCard(s, subject, grouped[subject]!)),
+        ],
+      ],
+    );
+  }
+
+  Widget _gradeHero(VibeSkin s, double totalAvg, int subjectCount) {
+    final col = _grades.isEmpty ? VibePalette.primary : _gradeCol(totalAvg);
+    final progress = _grades.isEmpty ? 0.0 : (totalAvg / 10).clamp(0.0, 1.0);
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(26),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            alphaCol(VibePalette.primary, s.dark ? 0.26 : 0.14),
+            s.card,
+          ],
+        ),
+        border: Border.all(color: s.border),
+        boxShadow: s.cardShadow,
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 90,
+            height: 90,
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0, end: progress),
+              duration: const Duration(milliseconds: 900),
+              curve: Curves.easeOutCubic,
+              builder: (context, value, _) => CustomPaint(
+                painter: _RingPainter(
+                  progress: value,
+                  stroke: 9,
+                  track: alphaCol(s.muted, 0.18),
+                  colors: [col, alphaCol(col, 0.55)],
+                ),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _grades.isEmpty ? '--' : totalAvg.toStringAsFixed(2),
+                        style: TextStyle(
+                            fontSize: 23,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -1,
+                            height: 1.05,
+                            color: s.txt),
                       ),
-                    ),
-                    Text(_grades.isEmpty ? '--' : totalAvg.toStringAsFixed(2),
-                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: txt)),
-                  ],
+                      Text('/ 10',
+                          style: TextStyle(
+                              fontSize: 9.5, fontWeight: FontWeight.w700, color: s.faint)),
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('MEDIA GENERALE',
+                    style: TextStyle(
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.2,
+                        color: s.faint)),
+                const SizedBox(height: 3),
+                Text(
+                  _weightedAvg ? 'Ponderata' : 'Aritmetica',
+                  style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.4,
+                      color: s.txt),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  _grades.isEmpty
+                      ? 'Aggiungi il primo voto'
+                      : '${_grades.length} voti · $subjectCount materie',
+                  style: TextStyle(fontSize: 11.5, color: s.muted),
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
                   children: [
-                    Text(_weightedAvg ? 'Media Generale Ponderata' : 'Media Generale Aritmetica',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: txt)),
-                    const SizedBox(height: 4),
-                    Text('${_grades.length} voti in ${subjects.length} materie',
-                        style: TextStyle(fontSize: 12.5, color: muted)),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      children: [
-                        ChoiceChip(
-                            label: const Text('Ponderata'),
-                            selected: _weightedAvg,
-                            onSelected: (_) => setState(() => _weightedAvg = true)),
-                        ChoiceChip(
-                            label: const Text('Aritmetica'),
-                            selected: !_weightedAvg,
-                            onSelected: (_) => setState(() => _weightedAvg = false)),
-                      ],
+                    _miniToggle(
+                      s,
+                      label: 'Ponderata',
+                      active: _weightedAvg,
+                      onTap: () => setState(() => _weightedAvg = true),
+                    ),
+                    _miniToggle(
+                      s,
+                      label: 'Aritmetica',
+                      active: !_weightedAvg,
+                      onTap: () => setState(() => _weightedAvg = false),
                     ),
                   ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _miniToggle(VibeSkin s,
+      {required String label, required bool active, required VoidCallback onTap}) {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        onTap();
+      },
+      child: AnimatedContainer(
+        duration: VibeMetrics.fast,
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+        decoration: BoxDecoration(
+          color: active ? alphaCol(VibePalette.primary, 0.18) : s.cardAlt,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+              color: active ? alphaCol(VibePalette.primary, 0.5) : s.border),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            color: active ? const Color(0xFF818CF8) : s.muted,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _distributionCard(VibeSkin s) {
+    final buckets = <String, int>{
+      'Insufficienti': _grades.where((g) => g.value < 6).length,
+      'Sufficienti': _grades.where((g) => g.value >= 6 && g.value < 7.5).length,
+      'Buoni': _grades.where((g) => g.value >= 7.5 && g.value < 8.5).length,
+      'Ottimi': _grades.where((g) => g.value >= 8.5).length,
+    };
+    final colors = {
+      'Insufficienti': VibePalette.verificaRed,
+      'Sufficienti': VibePalette.interrogazioneAmber,
+      'Buoni': VibePalette.capBlue,
+      'Ottimi': VibePalette.okGreen,
+    };
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      decoration: s.panel(22),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text('Distribuzione',
+                  style: TextStyle(
+                      fontSize: 13.5, fontWeight: FontWeight.w800, color: s.txt)),
+              const Spacer(),
+              Text('${_grades.length} voti',
+                  style: TextStyle(fontSize: 11, color: s.faint)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: SizedBox(
+              height: 8,
+              child: Row(
+                children: [
+                  for (final e in buckets.entries)
+                    if (e.value > 0)
+                      Expanded(
+                        flex: e.value,
+                        child: Container(
+                          margin: const EdgeInsets.only(right: 2),
+                          color: colors[e.key],
+                        ),
+                      ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 14,
+            runSpacing: 6,
+            children: buckets.entries
+                .map((e) => Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                              color: colors[e.key], shape: BoxShape.circle),
+                        ),
+                        const SizedBox(width: 5),
+                        Text('${e.key} ${e.value}',
+                            style: TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w600,
+                                color: s.muted)),
+                      ],
+                    ))
+                .toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _subjectCard(VibeSkin s, String subject, List<SchoolGrade> list) {
+    final m = _avg(list);
+    final col = _gradeCol(m);
+    final target = m < 6.0 ? 6.0 : 8.0;
+    final needed =
+        target * (list.length + 1) - list.fold<double>(0, (a, b) => a + b.value);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: s.panel(20),
+      clipBehavior: Clip.antiAlias,
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          shape: const Border(),
+          collapsedShape: const Border(),
+          tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+          childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+          iconColor: s.muted,
+          collapsedIconColor: s.faint,
+          leading: Container(
+            width: 46,
+            height: 46,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: alphaCol(col, 0.14),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: alphaCol(col, 0.3)),
+            ),
+            child: Text(
+              m.toStringAsFixed(1),
+              style: TextStyle(
+                  fontSize: 16, fontWeight: FontWeight.w900, letterSpacing: -0.6, color: col),
+            ),
+          ),
+          title: Text(
+            subject,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800, color: s.txt),
+          ),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 3),
+              Text(
+                needed > 0 && needed <= 10
+                    ? '${list.length} ${list.length == 1 ? 'voto' : 'voti'} · '
+                        'per l\'${target.toInt()} serve ${needed.toStringAsFixed(1)}'
+                    : '${list.length} ${list.length == 1 ? 'voto' : 'voti'} · media solida',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 11, color: s.muted),
+              ),
+              const SizedBox(height: 6),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: (m / target).clamp(0.0, 1.0),
+                  minHeight: 4,
+                  backgroundColor: alphaCol(s.muted, 0.18),
+                  valueColor: AlwaysStoppedAnimation(col),
                 ),
               ),
             ],
           ),
-        ),
-        const SizedBox(height: 16),
-        if (subjects.isEmpty)
-          Container(
-            padding: const EdgeInsets.all(28),
-            decoration: cardDeco(card, border),
-            child: Column(
-              children: [
-                Icon(CupertinoIcons.chart_bar_alt_fill, size: 38, color: muted),
-                const SizedBox(height: 10),
-                Text('Nessun voto presente',
-                    style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.w800, color: txt)),
-                const SizedBox(height: 6),
-                Text(
-                    'Sincronizza Argo nella scheda "Impostazioni" o premi + per inserire un voto.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: muted)),
-              ],
-            ),
-          )
-        else
-          ...subjects.map((s) {
-            final list = grouped[s]!;
-            final m = _avg(list);
-            final col = _gradeCol(m);
-            final target = m < 6.0 ? 6.0 : 8.0;
-            final needed = target * (list.length + 1) - list.fold<double>(0, (a, b) => a + b.value);
-
-            return Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              decoration: cardDeco(card, border, 20),
-              child: ExpansionTile(
-                shape: const Border(),
-                collapsedShape: const Border(),
-                leading: Container(
-                  width: 46,
-                  height: 46,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                      color: alphaCol(col, 0.16), borderRadius: BorderRadius.circular(13)),
-                  child: Text(m.toStringAsFixed(1),
-                      style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w900, color: col)),
+          children: [
+            for (final g in list) ...[
+              Container(
+                margin: const EdgeInsets.only(top: 7),
+                padding: const EdgeInsets.fromLTRB(10, 9, 4, 9),
+                decoration: BoxDecoration(
+                  color: s.cardAlt,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: s.border),
                 ),
-                title: Text(s, style: TextStyle(fontWeight: FontWeight.w800, color: txt)),
-                subtitle: Text(
-                  needed > 0 && needed <= 10
-                      ? '${list.length} voti · Per il ${target.toInt()} serve ${needed.toStringAsFixed(1)}'
-                      : '${list.length} voti · Media solida',
-                  style: TextStyle(fontSize: 12, color: muted),
-                ),
-                children: list.map((g) {
-                  final gc = _gradeCol(g.value);
-                  return ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: alphaCol(gc, 0.18),
-                      child: Text(g.value.toStringAsFixed(1),
-                          style: TextStyle(fontWeight: FontWeight.w800, color: gc, fontSize: 13)),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 38,
+                      height: 38,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: alphaCol(_gradeCol(g.value), 0.14),
+                        borderRadius: BorderRadius.circular(11),
+                      ),
+                      child: Text(
+                        g.value.toStringAsFixed(1),
+                        style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w900,
+                            color: _gradeCol(g.value)),
+                      ),
                     ),
-                    title: Text(g.description.isEmpty ? 'Prova ${g.type}' : g.description,
-                        style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: txt)),
-                    subtitle: Text(
-                      '${g.type} · Peso ${(g.weight * 100).round()}% · ${DateFormat('dd/MM/yyyy').format(g.date)}${g.fromArgo ? ' · ARGO' : ''}',
-                      style: TextStyle(fontSize: 11.5, color: muted),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            g.description.isEmpty ? 'Prova ${g.type}' : g.description,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                                color: s.txt),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${g.type} · peso ${(g.weight * 100).round()}% · '
+                            '${DateFormat('dd/MM/yy').format(g.date)}'
+                            '${g.fromArgo ? ' · ARGO' : ''}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 10, color: s.faint),
+                          ),
+                        ],
+                      ),
                     ),
-                    trailing: IconButton(
-                      icon: Icon(CupertinoIcons.trash, size: 17, color: muted),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      tooltip: 'Elimina voto',
+                      icon: Icon(CupertinoIcons.trash, size: 15, color: s.faint),
                       onPressed: () async {
                         setState(() => _grades.removeWhere((x) => x.id == g.id));
                         await _saveGrades();
                       },
                     ),
-                  );
-                }).toList(),
+                  ],
+                ),
               ),
-            );
-          }),
-      ],
+            ],
+          ],
+        ),
+      ),
     );
   }
 
   // --------------------------------------------------------------------------
-  // MODALI CREA / MODIFICA EVENTO (SENZA MATEMATICA DEFAULT, SENZA NOTE, SENZA ALTA PRIORITÀ)
+  // MODALI
   // --------------------------------------------------------------------------
+
+  Widget _sheetHandle(VibeSkin s) => Center(
+        child: Container(
+          width: 38,
+          height: 4,
+          decoration: BoxDecoration(
+            color: alphaCol(s.muted, 0.35),
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+      );
 
   void _showEventModal({DateTime? baseDate, SchoolEvent? existing}) {
     final isEdit = existing != null;
+    final s = VibeSkin(widget.isDark);
     final subjCtrl = TextEditingController(text: existing?.subject ?? '');
     final titleCtrl = TextEditingController(text: existing?.title ?? '');
     var cat = existing?.category ?? EventCategory.verifica;
@@ -3379,42 +4884,69 @@ class _HomeShellState extends State<HomeShell> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: widget.isDark ? VibePalette.darkCard : VibePalette.lightCard,
-      shape:
-          const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
+      backgroundColor: s.card,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setM) => Padding(
-          padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 22),
+          padding: EdgeInsets.fromLTRB(20, 10, 20, MediaQuery.of(ctx).viewInsets.bottom + 22),
           child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                _sheetHandle(s),
+                const SizedBox(height: 14),
                 Text(
-                  isEdit ? 'Modifica Impegno' : 'Nuovo Impegno',
-                  style: const TextStyle(fontSize: 18.5, fontWeight: FontWeight.w800),
+                  isEdit ? 'Modifica impegno' : 'Nuovo impegno',
+                  style: TextStyle(
+                      fontSize: 19,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.5,
+                      color: s.txt),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 3),
+                Text(
+                  isEdit
+                      ? 'Aggiorna i dettagli e le notifiche collegate'
+                      : 'Verifica, interrogazione o qualsiasi scadenza',
+                  style: TextStyle(fontSize: 12.5, color: s.muted),
+                ),
+                const SizedBox(height: 16),
+                _sectionLabel(s, 'Tipo', CupertinoIcons.tag),
                 Wrap(
                   spacing: 8,
+                  runSpacing: 8,
                   children: EventCategory.values
-                      .map((c) => ChoiceChip(
-                            label: Text(c.label),
+                      .map((c) => _pill(
+                            s: s,
+                            label: c.label,
                             selected: cat == c,
-                            onSelected: (_) => setM(() => cat = c),
+                            accent: c.color,
+                            onTap: () => setM(() => cat = c),
                           ))
                       .toList(),
                 ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: subjCtrl,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: fieldDeco('Materia', icon: CupertinoIcons.book),
+                ),
                 const SizedBox(height: 10),
-                TextField(controller: subjCtrl, decoration: fieldDeco('Materia')),
-                const SizedBox(height: 10),
-                TextField(controller: titleCtrl, decoration: fieldDeco('Argomento / Titolo')),
+                TextField(
+                  controller: titleCtrl,
+                  textCapitalization: TextCapitalization.sentences,
+                  minLines: 1,
+                  maxLines: 3,
+                  decoration: fieldDeco('Argomento / titolo'),
+                ),
                 const SizedBox(height: 10),
                 Row(
                   children: [
                     Expanded(
                       child: OutlinedButton.icon(
-                        icon: const Icon(CupertinoIcons.calendar, size: 16),
+                        icon: const Icon(CupertinoIcons.calendar, size: 15),
                         label: Text(DateFormat('dd/MM/yyyy').format(dt)),
                         onPressed: () async {
                           final p = await showDatePicker(
@@ -3437,7 +4969,7 @@ class _HomeShellState extends State<HomeShell> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: OutlinedButton.icon(
-                        icon: const Icon(CupertinoIcons.clock, size: 16),
+                        icon: const Icon(CupertinoIcons.clock, size: 15),
                         label: Text(DateFormat('HH:mm').format(dt)),
                         onPressed: () async {
                           final t = await showTimePicker(
@@ -3450,18 +4982,18 @@ class _HomeShellState extends State<HomeShell> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 14),
                 DropdownButtonFormField<EventReminderMode>(
                   value: remMode,
                   isExpanded: true,
-                  decoration: fieldDeco(
-                    'Quando ricevere la notifica',
-                    icon: CupertinoIcons.bell,
-                  ),
+                  decoration: fieldDeco('Quando ricevere la notifica',
+                      icon: CupertinoIcons.bell),
                   items: EventReminderMode.values
                       .map((m) => DropdownMenuItem(
                             value: m,
-                            child: Text(m.label, overflow: TextOverflow.ellipsis),
+                            child: Text(m.label,
+                                style: TextStyle(fontSize: 13, color: s.txt),
+                                overflow: TextOverflow.ellipsis),
                           ))
                       .toList(),
                   onChanged: (v) {
@@ -3474,8 +5006,8 @@ class _HomeShellState extends State<HomeShell> {
                     children: [
                       Expanded(
                         child: OutlinedButton.icon(
-                          icon: const Icon(CupertinoIcons.bell_circle, size: 16),
-                          label: Text('Giorno: ${DateFormat('dd/MM/yyyy').format(customRem)}'),
+                          icon: const Icon(CupertinoIcons.bell_circle, size: 15),
+                          label: Text(DateFormat('dd/MM/yyyy').format(customRem)),
                           onPressed: () async {
                             final p = await showDatePicker(
                               context: ctx,
@@ -3493,16 +5025,16 @@ class _HomeShellState extends State<HomeShell> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: OutlinedButton.icon(
-                          icon: const Icon(CupertinoIcons.time, size: 16),
-                          label: Text('Ora: ${DateFormat('HH:mm').format(customRem)}'),
+                          icon: const Icon(CupertinoIcons.time, size: 15),
+                          label: Text(DateFormat('HH:mm').format(customRem)),
                           onPressed: () async {
                             final t = await showTimePicker(
                               context: ctx,
                               initialTime: TimeOfDay.fromDateTime(customRem),
                             );
                             if (t != null) {
-                              setM(() => customRem = DateTime(
-                                  customRem.year, customRem.month, customRem.day, t.hour, t.minute));
+                              setM(() => customRem = DateTime(customRem.year,
+                                  customRem.month, customRem.day, t.hour, t.minute));
                             }
                           },
                         ),
@@ -3510,7 +5042,7 @@ class _HomeShellState extends State<HomeShell> {
                     ],
                   ),
                 ],
-                const SizedBox(height: 16),
+                const SizedBox(height: 18),
                 Row(
                   children: [
                     if (isEdit) ...[
@@ -3519,20 +5051,22 @@ class _HomeShellState extends State<HomeShell> {
                           await _deleteEvent(existing);
                           if (ctx.mounted) Navigator.pop(ctx);
                         },
-                        icon: const Icon(CupertinoIcons.trash,
-                            size: 16, color: VibePalette.verificaRed),
-                        label:
-                            const Text('Elimina', style: TextStyle(color: VibePalette.verificaRed)),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: VibePalette.verificaRed,
+                          side: BorderSide(color: alphaCol(VibePalette.verificaRed, 0.4)),
+                        ),
+                        icon: const Icon(CupertinoIcons.trash, size: 15),
+                        label: const Text('Elimina'),
                       ),
                       const SizedBox(width: 10),
                     ],
                     Expanded(
                       child: FilledButton(
                         onPressed: () async {
-                          final s =
+                          final subj =
                               subjCtrl.text.trim().isEmpty ? 'Materia' : subjCtrl.text.trim();
                           final t = titleCtrl.text.trim().isEmpty
-                              ? '${cat.label} di $s'
+                              ? '${cat.label} di $subj'
                               : titleCtrl.text.trim();
                           setState(() {
                             if (isEdit) {
@@ -3540,7 +5074,7 @@ class _HomeShellState extends State<HomeShell> {
                               if (idx != -1) {
                                 _events[idx] = existing.copyWith(
                                   title: t,
-                                  subject: s,
+                                  subject: subj,
                                   dateTime: dt,
                                   category: cat,
                                   editedByUser: true,
@@ -3553,7 +5087,7 @@ class _HomeShellState extends State<HomeShell> {
                               _events.add(SchoolEvent(
                                 id: 'm_${DateTime.now().millisecondsSinceEpoch}',
                                 title: t,
-                                subject: s,
+                                subject: subj,
                                 dateTime: dt,
                                 category: cat,
                                 reminderMode: remMode,
@@ -3567,7 +5101,7 @@ class _HomeShellState extends State<HomeShell> {
                           await _saveEvents();
                           if (ctx.mounted) Navigator.pop(ctx);
                         },
-                        child: Text(isEdit ? 'Salva Modifiche' : 'Salva Impegno'),
+                        child: Text(isEdit ? 'Salva modifiche' : 'Salva impegno'),
                       ),
                     ),
                   ],
@@ -3581,6 +5115,7 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   void _showAddGradeModal() {
+    final s = VibeSkin(widget.isDark);
     final subjCtrl = TextEditingController();
     final descCtrl = TextEditingController();
     double val = 7.0;
@@ -3590,46 +5125,130 @@ class _HomeShellState extends State<HomeShell> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: widget.isDark ? VibePalette.darkCard : VibePalette.lightCard,
-      shape:
-          const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
+      backgroundColor: s.card,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setM) => Padding(
-          padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 22),
+          padding: EdgeInsets.fromLTRB(20, 10, 20, MediaQuery.of(ctx).viewInsets.bottom + 22),
           child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Nuovo Voto',
-                    style: TextStyle(fontSize: 18.5, fontWeight: FontWeight.w800)),
-                const SizedBox(height: 12),
-                TextField(controller: subjCtrl, decoration: fieldDeco('Materia')),
-                const SizedBox(height: 10),
-                Text('Voto: ${val.toStringAsFixed(2)}  ·  Peso: ${(weight * 100).round()}%',
-                    style: const TextStyle(fontWeight: FontWeight.w800)),
-                Slider(
-                    value: val,
-                    min: 1,
-                    max: 10,
-                    divisions: 36,
-                    onChanged: (v) => setM(() => val = v)),
-                Slider(
-                    value: weight,
-                    min: 0.25,
-                    max: 1.0,
-                    divisions: 3,
-                    onChanged: (v) => setM(() => weight = v)),
+                _sheetHandle(s),
+                const SizedBox(height: 14),
+                Text('Nuovo voto',
+                    style: TextStyle(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.5,
+                        color: s.txt)),
+                const SizedBox(height: 3),
+                Text('Registra una valutazione e aggiorna la media',
+                    style: TextStyle(fontSize: 12.5, color: s.muted)),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: subjCtrl,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: fieldDeco('Materia', icon: CupertinoIcons.book),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+                  decoration: BoxDecoration(
+                    color: s.cardAlt,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: s.border),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          Text('Voto',
+                              style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: s.muted)),
+                          const Spacer(),
+                          Text(
+                            val.toStringAsFixed(2),
+                            style: TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -0.8,
+                                color: _gradeCol(val)),
+                          ),
+                        ],
+                      ),
+                      SliderTheme(
+                        data: SliderTheme.of(ctx).copyWith(
+                          trackHeight: 5,
+                          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+                          overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+                        ),
+                        child: Slider(
+                            value: val,
+                            min: 1,
+                            max: 10,
+                            divisions: 36,
+                            label: val.toStringAsFixed(2),
+                            onChanged: (v) => setM(() => val = v)),
+                      ),
+                      Row(
+                        children: [
+                          Text('Peso',
+                              style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: s.muted)),
+                          const Spacer(),
+                          Text(
+                            '${(weight * 100).round()}%',
+                            style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w900,
+                                color: s.txt),
+                          ),
+                        ],
+                      ),
+                      SliderTheme(
+                        data: SliderTheme.of(ctx).copyWith(
+                          trackHeight: 5,
+                          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+                          overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+                        ),
+                        child: Slider(
+                            value: weight,
+                            min: 0.25,
+                            max: 1.0,
+                            divisions: 3,
+                            label: '${(weight * 100).round()}%',
+                            onChanged: (v) => setM(() => weight = v)),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
                 Wrap(
                   spacing: 8,
                   children: ['Scritto', 'Orale', 'Pratico']
-                      .map((t) => ChoiceChip(
-                          label: Text(t), selected: type == t, onSelected: (_) => setM(() => type = t)))
+                      .map((t) => _pill(
+                            s: s,
+                            label: t,
+                            selected: type == t,
+                            accent: VibePalette.primary,
+                            onTap: () => setM(() => type = t),
+                          ))
                       .toList(),
                 ),
-                const SizedBox(height: 10),
-                TextField(controller: descCtrl, decoration: fieldDeco('Argomento (opzionale)')),
-                const SizedBox(height: 14),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: descCtrl,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: fieldDeco('Argomento (opzionale)'),
+                ),
+                const SizedBox(height: 18),
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
@@ -3637,8 +5256,9 @@ class _HomeShellState extends State<HomeShell> {
                       setState(() {
                         _grades.add(SchoolGrade(
                           id: 'g_${DateTime.now().millisecondsSinceEpoch}',
-                          subject:
-                              subjCtrl.text.trim().isEmpty ? 'Materia' : subjCtrl.text.trim(),
+                          subject: subjCtrl.text.trim().isEmpty
+                              ? 'Materia'
+                              : subjCtrl.text.trim(),
                           value: val,
                           weight: weight,
                           type: type,
@@ -3649,7 +5269,7 @@ class _HomeShellState extends State<HomeShell> {
                       await _saveGrades();
                       if (ctx.mounted) Navigator.pop(ctx);
                     },
-                    child: const Text('Registra Voto'),
+                    child: const Text('Registra voto'),
                   ),
                 ),
               ],
@@ -3662,7 +5282,7 @@ class _HomeShellState extends State<HomeShell> {
 }
 
 // ============================================================================
-// TAB 4: IMPOSTAZIONI (GESTIONE NOTIFICHE + SINCRONIZZAZIONE ARGO SEPARATE)
+// TAB 4: IMPOSTAZIONI (NOTIFICHE + SINCRONIZZAZIONE ARGO)
 // ============================================================================
 
 class _SettingsTab extends StatefulWidget {
@@ -3711,108 +5331,213 @@ class _SettingsTabState extends State<_SettingsTab> {
     super.dispose();
   }
 
+  Widget _label(VibeSkin s, String text, IconData icon) => Padding(
+        padding: const EdgeInsets.only(left: 4, bottom: 8),
+        child: Row(
+          children: [
+            Icon(icon, size: 14, color: VibePalette.primary),
+            const SizedBox(width: 6),
+            Text(
+              text.toUpperCase(),
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.1,
+                color: s.faint,
+              ),
+            ),
+          ],
+        ),
+      );
+
+  Widget _switchRow(
+    VibeSkin s, {
+    required IconData icon,
+    required Color accent,
+    required String title,
+    required String subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: alphaCol(accent, 0.13),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, size: 18, color: accent),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: TextStyle(
+                        fontSize: 13.5, fontWeight: FontWeight.w700, color: s.txt)),
+                const SizedBox(height: 2),
+                Text(subtitle,
+                    style: TextStyle(fontSize: 11, height: 1.3, color: s.faint)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Switch.adaptive(value: value, onChanged: onChanged),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final txt = widget.isDark ? Colors.white : const Color(0xFF0F172A);
-    final muted = widget.isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
+    final s = VibeSkin(widget.isDark);
+    final lastSync = widget.creds.lastSync;
 
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 40),
+      padding: const EdgeInsets.fromLTRB(VibeMetrics.pagePad, 4, VibeMetrics.pagePad, 110),
       children: [
         Text('Impostazioni',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: txt)),
-        const SizedBox(height: 14),
+            style: TextStyle(
+                fontSize: 19.5,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.6,
+                color: s.txt)),
+        const SizedBox(height: 2),
+        Text('Notifiche, registro e dati sul dispositivo',
+            style: TextStyle(fontSize: 11.5, color: s.faint)),
+        const SizedBox(height: 18),
 
-        // 1) SEZIONE GESTIONE NOTIFICHE
+        _label(s, 'Notifiche', CupertinoIcons.bell),
         Container(
-          padding: const EdgeInsets.all(20),
-          decoration: cardDeco(widget.cardColor, widget.borderColor),
+          padding: const EdgeInsets.fromLTRB(16, 6, 16, 14),
+          decoration: s.panel(24),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  const Icon(CupertinoIcons.bell_fill, color: VibePalette.capBlue, size: 20),
-                  const SizedBox(width: 8),
-                  Text('Gestione Notifiche',
-                      style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: txt)),
-                ],
-              ),
-              const SizedBox(height: 8),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Notifiche impegni ed eventi'),
-                subtitle: const Text('Ricevi i promemoria impostati sui tuoi impegni'),
+              _switchRow(
+                s,
+                icon: CupertinoIcons.bell_fill,
+                accent: VibePalette.capBlue,
+                title: 'Notifiche impegni ed eventi',
+                subtitle: 'Ricevi i promemoria impostati sui tuoi impegni',
                 value: widget.notifyOn,
                 onChanged: widget.onToggleNotify,
               ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Notifica orario ogni mattina alle 07:20'),
-                subtitle: const Text('Ti ricorda di controllare l\'orario della giornata'),
+              Divider(color: s.hairline, height: 1),
+              _switchRow(
+                s,
+                icon: CupertinoIcons.sun_max_fill,
+                accent: VibePalette.interrogazioneAmber,
+                title: 'Orario ogni mattina alle 07:20',
+                subtitle: 'Un promemoria per controllare le lezioni del giorno',
                 value: widget.morningNotifyOn,
                 onChanged: widget.onToggleMorningNotify,
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
                   onPressed: () => NotificationService.instance.sendTestNotification(),
-                  icon: const Icon(CupertinoIcons.bell, size: 17),
+                  icon: const Icon(CupertinoIcons.paperplane, size: 16),
                   label: const Text('Invia notifica di prova'),
                 ),
               ),
             ],
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 18),
 
-        // 2) SEZIONE SINCRONIZZAZIONE REGISTRO ARGO
+        _label(s, 'Registro Argo', CupertinoIcons.cloud_download),
         Container(
-          padding: const EdgeInsets.all(20),
-          decoration: cardDeco(widget.cardColor, widget.borderColor),
+          padding: const EdgeInsets.all(16),
+          decoration: s.panel(24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
-                  const Icon(CupertinoIcons.cloud_download_fill,
-                      color: VibePalette.primary, size: 20),
-                  const SizedBox(width: 8),
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                          colors: [VibePalette.capBlue, VibePalette.primary]),
+                      borderRadius: BorderRadius.circular(13),
+                      boxShadow: [
+                        BoxShadow(
+                            color: alphaCol(VibePalette.capBlue, 0.35),
+                            blurRadius: 14,
+                            offset: const Offset(0, 6)),
+                      ],
+                    ),
+                    child: const Icon(CupertinoIcons.cloud_download_fill,
+                        color: Colors.white, size: 20),
+                  ),
+                  const SizedBox(width: 12),
                   Expanded(
-                    child: Text('Sincronizzazione Registro Argo',
-                        style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: txt)),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('DidUP Famiglia',
+                            style: TextStyle(
+                                fontSize: 14.5, fontWeight: FontWeight.w800, color: s.txt)),
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            Container(
+                              width: 6,
+                              height: 6,
+                              decoration: BoxDecoration(
+                                color: lastSync != null
+                                    ? VibePalette.okGreen
+                                    : VibePalette.interrogazioneAmber,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 5),
+                            Flexible(
+                              child: Text(
+                                lastSync != null
+                                    ? 'Sincronizzato ${DateFormat('dd/MM · HH:mm').format(lastSync)}'
+                                    : 'Non ancora sincronizzato',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(fontSize: 11, color: s.faint),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 4),
-              Text(
-                widget.creds.lastSync != null
-                    ? 'Ultima sincronizzazione: ${DateFormat('dd/MM/yyyy HH:mm').format(widget.creds.lastSync!)}'
-                    : 'Sincronizza verifiche, interrogazioni e voti da DidUP Famiglia',
-                style: TextStyle(fontSize: 12.5, color: muted),
-              ),
               if (widget.lastError != null && widget.lastError!.isNotEmpty) ...[
-                const SizedBox(height: 12),
+                const SizedBox(height: 14),
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: alphaCol(VibePalette.verificaRed, 0.14),
+                    color: alphaCol(VibePalette.verificaRed, 0.10),
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: alphaCol(VibePalette.verificaRed, 0.5)),
+                    border: Border.all(color: alphaCol(VibePalette.verificaRed, 0.35)),
                   ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Icon(Icons.error_outline_rounded,
-                          color: VibePalette.verificaRed, size: 19),
+                          color: VibePalette.verificaRed, size: 18),
                       const SizedBox(width: 8),
                       Expanded(
                         child: SelectableText(
                           widget.lastError!,
-                          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: txt),
+                          style: TextStyle(
+                              fontSize: 11.5, height: 1.4, fontWeight: FontWeight.w600, color: s.txt),
                         ),
                       ),
                     ],
@@ -3823,16 +5548,17 @@ class _SettingsTabState extends State<_SettingsTab> {
               TextField(
                 controller: _schoolCtrl,
                 textCapitalization: TextCapitalization.characters,
-                decoration:
-                    fieldDeco('Codice Scuola (es. SG12345)', icon: CupertinoIcons.building_2_fill),
+                decoration: fieldDeco('Codice scuola (es. SG12345)',
+                    icon: CupertinoIcons.building_2_fill),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               TextField(
                 controller: _userCtrl,
                 autocorrect: false,
-                decoration: fieldDeco('Nome Utente Argo', icon: CupertinoIcons.person_fill),
+                decoration:
+                    fieldDeco('Nome utente Argo', icon: CupertinoIcons.person_fill),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               TextField(
                 controller: _passCtrl,
                 obscureText: _obscure,
@@ -3840,7 +5566,8 @@ class _SettingsTabState extends State<_SettingsTab> {
                   'Password',
                   icon: CupertinoIcons.lock_fill,
                   suffix: IconButton(
-                    icon: Icon(_obscure ? CupertinoIcons.eye : CupertinoIcons.eye_slash),
+                    icon: Icon(_obscure ? CupertinoIcons.eye : CupertinoIcons.eye_slash,
+                        size: 19, color: s.muted),
                     onPressed: () => setState(() => _obscure = !_obscure),
                   ),
                 ),
@@ -3857,8 +5584,8 @@ class _SettingsTabState extends State<_SettingsTab> {
                               _passCtrl.text.isEmpty) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                  content:
-                                      Text('Inserisci Codice Scuola, Nome utente e Password.')),
+                                  content: Text(
+                                      'Inserisci Codice Scuola, Nome utente e Password.')),
                             );
                             return;
                           }
@@ -3866,44 +5593,152 @@ class _SettingsTabState extends State<_SettingsTab> {
                         },
                   icon: widget.syncing
                       ? const SizedBox(
-                          width: 18,
-                          height: 18,
+                          width: 17,
+                          height: 17,
                           child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : const Icon(CupertinoIcons.arrow_2_circlepath),
-                  label: Text(widget.syncing ? 'Sincronizzazione...' : 'Sincronizza Registro Argo'),
+                      : const Icon(CupertinoIcons.arrow_2_circlepath, size: 17),
+                  label: Text(widget.syncing ? 'Sincronizzazione…' : 'Sincronizza Argo'),
                 ),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 8),
               SizedBox(
                 width: double.infinity,
-                child: OutlinedButton.icon(
+                child: TextButton.icon(
                   onPressed: widget.syncing
                       ? null
-                      : () => widget.onDemo(_schoolCtrl.text, _userCtrl.text, _passCtrl.text),
-                  icon: const Icon(CupertinoIcons.sparkles, size: 17),
-                  label: const Text('Carica Dati Demo Studenti (Test Rapido)'),
+                      : () =>
+                          widget.onDemo(_schoolCtrl.text, _userCtrl.text, _passCtrl.text),
+                  icon: const Icon(CupertinoIcons.sparkles, size: 15),
+                  label: const Text('Carica dati demo studente'),
                 ),
               ),
             ],
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 18),
 
-        // 3) PULIZIA DATI OFFLINE
+        _label(s, 'Dati sul dispositivo', CupertinoIcons.archivebox),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-          decoration: cardDeco(widget.cardColor, widget.borderColor),
-          child: ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(CupertinoIcons.trash_circle, color: VibePalette.verificaRed),
-            title: const Text('Cancella eventi e voti salvati offline'),
-            subtitle: const Text('Il tuo orario scolastico viene mantenuto'),
-            onTap: widget.onReset,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          decoration: s.panel(24),
+          child: Column(
+            children: [
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: alphaCol(VibePalette.verificaRed, 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(CupertinoIcons.trash,
+                      size: 17, color: VibePalette.verificaRed),
+                ),
+                title: Text('Cancella eventi e voti',
+                    style: TextStyle(
+                        fontSize: 13.5, fontWeight: FontWeight.w700, color: s.txt)),
+                subtitle: Text('L\'orario scolastico viene mantenuto',
+                    style: TextStyle(fontSize: 11, color: s.faint)),
+                trailing: Icon(CupertinoIcons.chevron_right, size: 15, color: s.faint),
+                onTap: widget.onReset,
+              ),
+              Divider(color: s.hairline, height: 1),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: alphaCol(VibePalette.okGreen, 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(CupertinoIcons.lock_shield,
+                      size: 17, color: VibePalette.okGreen),
+                ),
+                title: Text('Offline e privato',
+                    style: TextStyle(
+                        fontSize: 13.5, fontWeight: FontWeight.w700, color: s.txt)),
+                subtitle: Text('I dati restano solo su questo dispositivo',
+                    style: TextStyle(fontSize: 11, color: s.faint)),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 22),
+        Center(
+          child: Column(
+            children: [
+              Text('Calendario Scuola',
+                  style: TextStyle(
+                      fontSize: 11.5, fontWeight: FontWeight.w700, color: s.faint)),
+              const SizedBox(height: 2),
+              Text('Versione 1.0.0',
+                  style: TextStyle(fontSize: 10, color: alphaCol(s.faint, 0.8))),
+            ],
           ),
         ),
       ],
     );
   }
+}
+
+// ============================================================================
+// PAINTER
+// ============================================================================
+
+class _RingPainter extends CustomPainter {
+  final double progress;
+  final double stroke;
+  final Color track;
+  final List<Color> colors;
+
+  const _RingPainter({
+    required this.progress,
+    required this.stroke,
+    required this.track,
+    required this.colors,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = (size.shortestSide - stroke) / 2;
+
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = stroke
+        ..strokeCap = StrokeCap.round
+        ..color = track,
+    );
+
+    final p = progress.clamp(0.0, 1.0);
+    if (p <= 0) return;
+
+    final rect = Rect.fromCircle(center: center, radius: radius);
+    canvas.drawArc(
+      rect,
+      -pi / 2,
+      2 * pi * p,
+      false,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = stroke
+        ..strokeCap = StrokeCap.round
+        ..shader = SweepGradient(
+          colors: colors,
+          startAngle: -pi / 2,
+          endAngle: 3 * pi / 2,
+        ).createShader(rect),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _RingPainter old) =>
+      old.progress != progress || old.stroke != stroke || old.track != track;
 }
 
 class _DashedRRectPainter extends CustomPainter {
