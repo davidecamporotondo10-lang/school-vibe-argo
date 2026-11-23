@@ -768,6 +768,39 @@ class NotificationService {
 // INTEGRAZIONE REGISTRO ELETTRONICO ARGO (DidUP 1.30.2+ OAuth2 + PAGINA CONTINUA)
 // ============================================================================
 
+// Valida soltanto le risposte API: non modifica richieste, login o token.
+class ArgoResponseParser {
+  static Map<String, dynamic> decode(http.Response response, String phase) {
+    final status = response.statusCode;
+    final body = response.body.replaceFirst(RegExp(r'^\uFEFF'), '').trimLeft();
+    final prefix = 'Argo · $phase (HTTP $status)';
+    if (body.isEmpty) {
+      throw Exception('$prefix: risposta vuota. Riprova più tardi.');
+    }
+    if (body.startsWith('<')) {
+      final hint = status == 401 || status == 403
+          ? 'Accesso negato dal server; non significa necessariamente che la password sia errata.'
+          : status >= 500
+              ? 'Il servizio Argo o un server intermedio non è disponibile.'
+              : 'Possibile reindirizzamento, manutenzione o filtro di rete.';
+      throw Exception('$prefix: ricevuta una pagina HTML invece dei dati. $hint Riprova più tardi, eventualmente con un’altra rete.');
+    }
+    dynamic decoded;
+    try {
+      decoded = jsonDecode(body);
+    } on FormatException {
+      throw Exception('$prefix: risposta non JSON o incompleta. Riprova più tardi.');
+    }
+    if (decoded is! Map<String, dynamic>) {
+      throw Exception('$prefix: formato della risposta non previsto.');
+    }
+    if (status < 200 || status >= 300) {
+      throw Exception('$prefix: richiesta rifiutata dal server. Riprova più tardi.');
+    }
+    return decoded;
+  }
+}
+
 class ArgoSyncResult {
   final List<SchoolEvent> events;
   final List<SchoolGrade> grades;
@@ -1134,7 +1167,7 @@ class ArgoApiService {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw 'Refresh token scaduto';
     }
-    final j = jsonDecode(res.body) as Map<String, dynamic>;
+    final j = ArgoResponseParser.decode(res, 'Rinnovo sessione');
     final access = '${j['access_token'] ?? ''}';
     if (access.isEmpty) throw 'Access token assente';
     final nextRefresh = '${j['refresh_token'] ?? ''}'.trim();
@@ -1324,7 +1357,7 @@ class ArgoApiService {
           )
           .timeout(const Duration(seconds: 25));
 
-      final tokJson = jsonDecode(tokRes.body) as Map<String, dynamic>;
+      final tokJson = ArgoResponseParser.decode(tokRes, 'Token OAuth');
       if (tokJson['access_token'] == null) {
         throw 'Token OAuth non ottenuto: ${tokJson['error_description'] ?? tokRes.statusCode}';
       }
@@ -1422,7 +1455,7 @@ class ArgoApiService {
     if (loginRes.statusCode == 410) {
       throw 'Versione DidUP ($appVersion) rifiutata dal server Argo (HTTP 410).';
     }
-    final loginRoot = jsonDecode(loginRes.body) as Map<String, dynamic>;
+    final loginRoot = ArgoResponseParser.decode(loginRes, 'Login applicativo');
     if (loginRoot['success'] == false) {
       throw '${loginRoot['msg'] ?? 'Login applicativo Argo non riuscito'}';
     }
@@ -1462,7 +1495,7 @@ class ArgoApiService {
             headers: activeHeaders,
           )
           .timeout(const Duration(seconds: 15));
-      final alunno = ((jsonDecode(pRes.body) as Map<String, dynamic>)['data'] as Map?)?['alunno'];
+      final alunno = (ArgoResponseParser.decode(pRes, 'Profilo')['data'] as Map?)?['alunno'];
       if (alunno is Map) {
         final nom = '${alunno['nominativo'] ?? ''}'.trim();
         if (nom.isNotEmpty) studentName = nom;
@@ -1480,7 +1513,7 @@ class ArgoApiService {
         )
         .timeout(const Duration(seconds: 30));
 
-    final dashRoot = jsonDecode(dashRes.body) as Map<String, dynamic>;
+    final dashRoot = ArgoResponseParser.decode(dashRes, 'Dashboard registro');
     if (dashRoot['success'] == false) {
       throw '${dashRoot['msg'] ?? 'Errore scaricamento dashboard Argo'}';
     }
