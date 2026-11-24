@@ -55,6 +55,20 @@ class RequestedChanges(unittest.TestCase):
         self.assertNotIn('password', backup)
         self.assertIn('Backup orario', SOURCE)
 
+    def test_android_import_does_not_filter_out_generic_json_files(self):
+        importer = section('  Future<void> _importTimetable()', '  Future<void> _saveEvents()')
+        picker = importer[:importer.index('if (picked == null')]
+        self.assertIn('type: FileType.any', picker)
+        self.assertIn('allowMultiple: false', picker)
+        self.assertIn('withData: true', picker)
+        self.assertNotIn('allowedExtensions', picker)
+        # Accepting any MIME type must not bypass the backup schema checks.
+        self.assertIn("decoded['format'] != 'school-vibe-timetable'", importer)
+        self.assertIn("decoded['version'] != 1", importer)
+        self.assertIn('days.length != 5', importer)
+        self.assertIn('confirmed != true', importer)
+        self.assertLess(importer.index('confirmed != true'), importer.index('saveTimetable(imported)'))
+
     def test_lesson_editor_simplified(self):
         editor = section('  void _editLessonSlotModal(', '  Widget _buildGradesTab(')
         for removed in ['suggestions', 'roomCtrl', 'Occuperà', '[1, 2, 3]', '($span slot)']:

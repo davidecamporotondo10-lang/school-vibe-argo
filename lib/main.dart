@@ -1882,13 +1882,22 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   Future<void> _importTimetable() async {
     try {
+      // Alcuni provider Android classificano i .json come testo o file generici.
+      // Il filtro MIME per estensione li rende non selezionabili: accettiamo
+      // tutti i file nel selettore e validiamo rigorosamente il contenuto sotto.
       final picked = await FilePicker.platform.pickFiles(
-        type: FileType.custom, allowedExtensions: ['json'], withData: true,
+        dialogTitle: 'Seleziona il file orario esportato dall’app',
+        type: FileType.any,
+        allowMultiple: false,
+        withData: true,
       );
       if (picked == null || !mounted) return;
-      final bytes = picked.files.single.bytes;
+      final file = picked.files.single;
+      if (file.size > 1024 * 1024) throw const FormatException();
+      final bytes = file.bytes;
       if (bytes == null || bytes.length > 1024 * 1024) throw const FormatException();
-      final decoded = jsonDecode(utf8.decode(bytes));
+      final content = utf8.decode(bytes).replaceFirst(RegExp(r'^\uFEFF'), '');
+      final decoded = jsonDecode(content);
       if (decoded is! Map<String, dynamic> ||
           decoded['format'] != 'school-vibe-timetable' || decoded['version'] != 1 ||
           decoded['days'] is! Map<String, dynamic>) throw const FormatException();
