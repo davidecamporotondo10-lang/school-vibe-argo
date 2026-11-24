@@ -16,6 +16,14 @@ def section(start, end):
 
 
 def normalize_api_decoders(text):
+    # Normalize only the intentional migration of the application API.
+    text = text.replace("  static const _apiBase = 'https://didattica.portaleargo.it/famiglia/api/';\n", '')
+    text = text.replace("_defaultAppVersion = '4.3.0'", "_defaultAppVersion = '1.30.2'")
+    text = text.replace("          'os-type': 'WEB',\n", '')
+    text = text.replace("      'os-type': 'WEB',\n", '')
+    for endpoint in ['login', 'profilo', 'dashboard/dashboard']:
+        text = text.replace("Uri.parse('${_apiBase}" + endpoint + "')",
+                            "Uri.parse('https://www.portaleargo.it/appfamiglia/api/rest/" + endpoint + "')")
     text = text.replace("ArgoResponseParser.decode(res, 'Rinnovo sessione');", 'jsonDecode(res.body) as Map<String, dynamic>;')
     text = text.replace("ArgoResponseParser.decode(tokRes, 'Token OAuth');", 'jsonDecode(tokRes.body) as Map<String, dynamic>;')
     text = text.replace("ArgoResponseParser.decode(loginRes, 'Login applicativo');", 'jsonDecode(loginRes.body) as Map<String, dynamic>;')
@@ -31,6 +39,19 @@ class RequestedChanges(unittest.TestCase):
              '937d47356f61702cad3753c817a12bd99f1529e3f6a40afd01ff0edc587a78fd'),
         ]:
             self.assertEqual(hashlib.sha256(normalize_api_decoders(section(start, end)).encode()).hexdigest(), digest)
+
+    def test_argo_api_migration_preserves_oauth(self):
+        self.assertIn("_apiBase = 'https://didattica.portaleargo.it/famiglia/api/'", SOURCE)
+        self.assertNotIn('https://www.portaleargo.it/appfamiglia/api/rest/', SOURCE)
+        self.assertIn("_defaultAppVersion = '4.3.0'", SOURCE)
+        self.assertEqual(SOURCE.count("'os-type': 'WEB'"), 2)
+        self.assertEqual(SOURCE.count("Uri.parse('${_apiBase}login')"), 2)
+        for endpoint in ['profilo', 'dashboard/dashboard']:
+            self.assertIn("Uri.parse('${_apiBase}" + endpoint + "')", SOURCE)
+        oauth = section('  static Future<(String, String, DateTime)> _tryRefreshToken(',
+                        '  static Future<ArgoSyncResult> sync(')
+        self.assertEqual(hashlib.sha256(oauth.encode()).hexdigest(),
+                         'a779f8dc9f80c282e7778b4068b41673290f001bd3a032df61ed67b2aa6d4e0b')
 
     def test_sync_transport_call_unchanged(self):
         call = section('      final res = demo', '      final creds = ArgoCredentials(')

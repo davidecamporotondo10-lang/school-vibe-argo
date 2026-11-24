@@ -873,7 +873,8 @@ class ArgoApiService {
   static const _clientId = '72fd6dea-d0ab-4bb9-8eaa-3ac24c84886c';
   static const _redirectUri = 'it.argosoft.didup.famiglia.new://login-callback';
   static const _scopes = 'openid offline profile user.roles argo';
-  static const _defaultAppVersion = '1.30.2';
+  static const _defaultAppVersion = '4.3.0';
+  static const _apiBase = 'https://didattica.portaleargo.it/famiglia/api/';
   static const _dataInizioDefault = '2000-01-01 00:00:00.000';
   static const _ua = 'okhttp/4.12.0';
 
@@ -1409,6 +1410,7 @@ class ArgoApiService {
     Map<String, String> didupHeaders([String? xToken, String? codMin]) => {
           'accept': 'application/json',
           'argo-client-version': appVersion,
+          'os-type': 'WEB',
           'content-type': 'application/json; charset=utf-8',
           'authorization': 'Bearer $bearer',
           'x-date-exp-auth': expStr,
@@ -1419,7 +1421,7 @@ class ArgoApiService {
 
     var loginRes = await http
         .post(
-          Uri.parse('https://www.portaleargo.it/appfamiglia/api/rest/login'),
+          Uri.parse('${_apiBase}login'),
           headers: didupHeaders(),
           body: jsonEncode({
             'lista-opzioni-notifiche': '{}',
@@ -1437,7 +1439,7 @@ class ArgoApiService {
       expAt = fresh.$3;
       loginRes = await http
           .post(
-            Uri.parse('https://www.portaleargo.it/appfamiglia/api/rest/login'),
+            Uri.parse('${_apiBase}login'),
             headers: {
               ...didupHeaders(),
               'authorization': 'Bearer $bearer',
@@ -1479,6 +1481,7 @@ class ArgoApiService {
     final activeHeaders = {
       'accept': 'application/json',
       'argo-client-version': appVersion,
+      'os-type': 'WEB',
       'content-type': 'application/json; charset=utf-8',
       'authorization': 'Bearer $bearer',
       'x-date-exp-auth': _fmtArgoDate(expAt),
@@ -1491,7 +1494,7 @@ class ArgoApiService {
     try {
       final pRes = await http
           .get(
-            Uri.parse('https://www.portaleargo.it/appfamiglia/api/rest/profilo'),
+            Uri.parse('${_apiBase}profilo'),
             headers: activeHeaders,
           )
           .timeout(const Duration(seconds: 15));
@@ -1504,7 +1507,7 @@ class ArgoApiService {
 
     final dashRes = await http
         .post(
-          Uri.parse('https://www.portaleargo.it/appfamiglia/api/rest/dashboard/dashboard'),
+          Uri.parse('${_apiBase}dashboard/dashboard'),
           headers: activeHeaders,
           body: jsonEncode({
             'dataultimoaggiornamento': _dataInizioDefault,
